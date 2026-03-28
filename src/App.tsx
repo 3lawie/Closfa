@@ -7,8 +7,8 @@ function App() {
   return (
     <>
       <div className="flex flex-col gap-[250px] relative top-[200px] ">
-        <h1>a</h1>
-        <h1>b</h1>
+        <video src=""></video>
+        <video src=""></video>
       </div>
     </>
   )
