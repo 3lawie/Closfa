@@ -19,37 +19,39 @@ function App() {
 
   if (isLoading) return "Loading...";
 
-  return <> ( {isAuthenticated} ? (
+  return (
     <>
-      <p>Logged in as {user!.email}</p>
+      {isAuthenticated ? (
+        <>
+          <p>Logged in as {user!.email}</p>
 
-      <h1>User Profile</h1>
+          <h1>User Profile</h1>
 
-      <pre>{JSON.stringify(user, null, 2)}</pre>
+          <pre>{JSON.stringify(user, null, 2)}</pre>
 
-      <button onClick={logout}>Logout</button>
+          <button onClick={logout}>Logout</button>
+        </>
+      ) : (
+        <>
+          {error && <p>Error: {error.message}</p>}
+
+          <button onClick={signup}>Signup</button>
+
+          <button onClick={() => login()}>Login</button>
+        </>
+      )}
+
+      <div className="h-full flex flex-col gap-[250px] relative top-[200px] mb-[200px] p-10">
+        <video src="videos/زيارة.mp4" controls
+          className='rounded-2xl w-[500px] h-[600px] object-contain m-auto'></video>
+        <video src="videos/3 HOUR STUDY WITH ME  Background noise, Rain Sounds, 10-min break, No Music - Merve (1080p, h264, youtube).mp4"
+          controls
+          className='border-2 rounded-2xl'></video>
+        <ImageRenderer />
+      </div>
     </>
-    ) : (
-    <>
-      {error && <p>Error: {error.message}</p>}
 
-      <button onClick={signup}>Signup</button>
-
-      <button onClick={login}>Login</button>
-    </>
-    )
-    )
-    <div className="h-full flex flex-col gap-[250px] relative top-[200px] mb-[200px] p-10">
-      <video src="videos/زيارة.mp4" controls
-        className='rounded-2xl w-[500px] h-[600px] object-contain m-auto'></video>
-      <video src="videos/3 HOUR STUDY WITH ME  Background noise, Rain Sounds, 10-min break, No Music - Merve (1080p, h264, youtube).mp4"
-        controls
-        className='border-2 rounded-2xl'></video>
-      <ImageRenderer />
-    </div>
-  </>
-
-
+  )
     ;
 }
 

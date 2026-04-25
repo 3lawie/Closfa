@@ -49,7 +49,6 @@ const ImageUploader = () => {
                 signature: authParams.signature,
                 expire: authParams.expire,
                 publicKey: "your_public_api_key_here", // Safe to expose in React
-                urlEndpoint: "https://ik.imagekit.io/your_id",
 
                 onProgress: (event) => {
                     setProgress((event.loaded / event.total) * 100);
