@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './App.css'
+import ImageRenderer from './Media Handler/ImageRenderer'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -12,6 +13,7 @@ function App() {
         <video src="videos/3 HOUR STUDY WITH ME  Background noise, Rain Sounds, 10-min break, No Music - Merve (1080p, h264, youtube).mp4"
           controls
           className='border-2 rounded-2xl'></video>
+        <ImageRenderer />
       </div>
     </>
   )
