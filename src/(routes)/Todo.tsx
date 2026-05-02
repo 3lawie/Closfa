@@ -17,9 +17,9 @@ function Todo() {
   ];
 
   return (
-    <div className="p-10 min-h-screen bg-[#F5F2ED] text-slate-800 font-sans">
+    <div className="!p-2 min-h-screen bg-[#F5F2ED] text-slate-800 font-sans">
       <header className="mb-12">
-        <h1 className="text-4xl font-black tracking-tight mb-2 text-slate-900 opacity-90">
+        <h1 className="text-4xl font-black tracking-tight mb-2 !text-slate-800 !opacity-90">
           Weekly Dashboard
         </h1>
         <p className="text-slate-500 font-medium">A muted, focused view of your week.</p>
@@ -32,7 +32,7 @@ function Todo() {
           return (
             <div
               key={i}
-              className="group relative aspect-square rounded-[2rem] bg-[#FCFAF7] border border-slate-200/60 
+              className="group relative aspect-square rounded-[2rem] bg-[#FCFAF7] border border-emerald-600/40 
                          flex flex-col items-center justify-center gap-3 p-6 
                          shadow-sm hover:shadow-md transition-all duration-500 
                          hover:-translate-y-1 cursor-pointer"
@@ -55,8 +55,8 @@ function Todo() {
 
               {/* Minor Color Indicator Dots - Muted */}
               <div className="flex gap-1.5 mt-1 opacity-40">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-600/40" />
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-600/40" />
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-600/40" />
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-600/40" />
               </div>
             </div>
           );
