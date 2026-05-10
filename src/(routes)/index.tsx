@@ -1,6 +1,7 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import ImageRenderer from "../Media Handler/ImageRenderer";
 import { createFileRoute, Link } from '@tanstack/react-router';
+import ImageUploader from "../Media Handler/ImageUploader";
 
 // 1. TanStack Router Configuration
 export const Route = createFileRoute('/')({
@@ -117,6 +118,10 @@ function IndexPage() {
                             <button className="bg-amber-500 text-white px-4 py-2 rounded-lg mt-4">Go to Todo</button>
                         </Link>
                     </article>
+
+                    {/* Footer */}
+                    <footer className="mt-20 text-center text-gray-400 text-sm border-t pt-6">
+                        Closfa © {new Date().getFullYear()} - <ImageUploader />                </footer>
 
                 </section>
             </div>
