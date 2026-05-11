@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, numeric, pgEnum, pgTable, primaryKey, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 
 
 const postStatusEnum = pgEnum("post_status", [
@@ -15,14 +15,66 @@ const commentTypeEnum = pgEnum("comment_type", [
     "text", "sticker"
 ])
 
-// Media is uploaded first, then referenced by profile/post/comment
+const mediaTypeEnum = pgEnum("media_type", [
+    "image", "video", "audio"
+])
+
+// Resolution labels — computed from width/height on upload
+// SD = below 720p, HD = 720p, FHD = 1080p, QHD = 1440p, UHD = 4K+
+const resolutionEnum = pgEnum("resolution", [
+    "SD", "HD", "FHD", "QHD", "UHD"
+])
+
+// ──────────────────────────────────────────────────────────────
+// Media table — uploaded first, then referenced by profile/post/comment
+// Fields are nullable based on media_type (enforced by CHECK constraints)
+// ──────────────────────────────────────────────────────────────
 const media = pgTable("media", {
     media_id: varchar("media_id").primaryKey().$defaultFn(() => createId()),
     user_id: varchar("user_id").notNull(),  // who uploaded it (no FK to avoid circular ref with user)
-    media_type: text("media_type").notNull(),
-    mediaUrl: varchar("media_url").notNull(),
+
+    // ── Core fields (required for all types) ──
+    media_type: mediaTypeEnum("media_type").notNull(),
+    mediaUrl: varchar("media_url").notNull(),      // ImageKit path or external URL
+    fileName: varchar("file_name").notNull(),       // original file name
+    mimeType: varchar("mime_type").notNull(),       // 'image/avif', 'video/mp4', 'audio/mpeg'
+    fileSize: integer("file_size"),                 // bytes
+
+    // ── Visual fields (image + video only, NULL for audio) ──
+    width: integer("width"),                        // pixels
+    height: integer("height"),                      // pixels
+    aspectRatio: numeric("aspect_ratio"),           // width / height, e.g. 1.78
+    resolution: resolutionEnum("resolution"),       // computed label: SD, HD, FHD, QHD, UHD
+
+    // ── Temporal fields (video + audio only, NULL for image) ──
+    duration: integer("duration"),                  // seconds
+
     createdAt: timestamp("created_at").defaultNow(),
-})
+}, (table) => ({
+    mediaUserIndex: index("media_user_index").on(table.user_id),
+    mediaTypeIndex: index("media_type_index").on(table.media_type),
+
+    // Images and videos MUST have width + height
+    visualMediaRequiresDimensions: check(
+        "visual_media_requires_dimensions",
+        sql`(${table.media_type} = 'audio' OR (${table.width} IS NOT NULL AND ${table.height} IS NOT NULL))`
+    ),
+    // Audio MUST NOT have width/height
+    audioNoDimensions: check(
+        "audio_no_dimensions",
+        sql`(${table.media_type} <> 'audio' OR (${table.width} IS NULL AND ${table.height} IS NULL))`
+    ),
+    // Video and audio MUST have duration
+    temporalMediaRequiresDuration: check(
+        "temporal_media_requires_duration",
+        sql`(${table.media_type} = 'image' OR ${table.duration} IS NOT NULL)`
+    ),
+    // Images MUST NOT have duration
+    imageNoDuration: check(
+        "image_no_duration",
+        sql`(${table.media_type} <> 'image' OR ${table.duration} IS NULL)`
+    ),
+}))
 
 const user = pgTable("user", {
     userId: varchar("user_id").primaryKey().$defaultFn(() => createId()),

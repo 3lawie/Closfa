@@ -3,11 +3,15 @@ import { schema } from "./schema";
 
 
 export const relations = defineRelations(schema, (r) => ({
-    // profile belongs to one user
+    // profile belongs to one user, has one media (avatar)
     profile: {
         user: r.one.user({
             from: r.profile.userId,
             to: r.user.userId,
+        }),
+        avatar: r.one.media({
+            from: r.profile.image,
+            to: r.media.media_id,
         }),
     },
 
@@ -48,6 +52,14 @@ export const relations = defineRelations(schema, (r) => ({
         }),
     },
 
+    // media can be attached to profile, post, comment, or reply
+    media: {
+        uploader: r.one.user({
+            from: r.media.user_id,
+            to: r.user.userId,
+        }),
+    },
+
     // post belongs to one user, has many comments, many categories (through junction)
     post: {
         author: r.many.user({
@@ -59,6 +71,11 @@ export const relations = defineRelations(schema, (r) => ({
         categories: r.many.categories({
             from: r.post.postId.through(r.postToCategory.post_id),
             to: r.categories.name.through(r.postToCategory.category_name),
+        }),
+        // Post's attached media
+        media: r.one.media({
+            from: r.post.media_id,
+            to: r.media.media_id,
         }),
     },
 
@@ -103,6 +120,11 @@ export const relations = defineRelations(schema, (r) => ({
             to: r.post.postId,
         }),
         replies: r.many.commentReply(),
+        // Comment's attached media (stickers, etc.)
+        media: r.one.media({
+            from: r.comment.media_id,
+            to: r.media.media_id,
+        }),
     },
 
     // commentReply belongs to one comment (parent), one user (author), one post
@@ -118,6 +140,11 @@ export const relations = defineRelations(schema, (r) => ({
         post: r.one.post({
             from: r.commentReply.post_id,
             to: r.post.postId,
+        }),
+        // Reply's attached media
+        media: r.one.media({
+            from: r.commentReply.media_id,
+            to: r.media.media_id,
         }),
     },
 }))
