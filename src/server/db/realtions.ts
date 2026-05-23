@@ -21,7 +21,10 @@ export const relations = defineRelations(schema, (r) => ({
             from: r.user.userId,
             to: r.profile.userId,
         }),
-        posts: r.many.post(),
+        posts: r.many.post({
+            from: r.user.userId.through(r.postToUser.user_id),
+            to: r.post.postId.through(r.postToUser.post_id),
+        }),
 
         // People who follow this user (followedId = me)
         followers: r.many.follow({
@@ -73,9 +76,9 @@ export const relations = defineRelations(schema, (r) => ({
             to: r.categories.name.through(r.postToCategory.category_name),
         }),
         // Post's attached media
-        media: r.one.media({
-            from: r.post.media_id,
-            to: r.media.media_id,
+        media: r.many.media({
+            from: r.post.postId.through(r.postToMedia.post_id),
+            to: r.media.media_id.through(r.postToMedia.media_id),
         }),
     },
 
@@ -106,6 +109,16 @@ export const relations = defineRelations(schema, (r) => ({
         user: r.one.user({
             from: r.postToUser.user_id,
             to: r.user.userId,
+        }),
+    },
+    postToMedia: {
+        post: r.one.post({
+            from: r.postToMedia.post_id,
+            to: r.post.postId,
+        }),
+        media: r.one.media({
+            from: r.postToMedia.media_id,
+            to: r.media.media_id,
         }),
     },
 

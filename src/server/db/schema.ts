@@ -142,7 +142,6 @@ const post = pgTable("post", {
     post_type: postTypeEnum("post_type").notNull().default("solo"),
     is_published: boolean("is_published").notNull().default(false),
     published_at: timestamp("published_at"),
-    media_id: varchar("media_id").references(() => media.media_id),
     views: integer("views").notNull().default(0),
     likes: integer("likes").notNull().default(0),
     comments: integer("comments").notNull().default(0),
@@ -167,6 +166,13 @@ const postToUser = pgTable("post_to_user", {
     user_id: varchar("user_id").notNull().references(() => user.userId),
 }, (table) => ({
     pk: primaryKey({ columns: [table.post_id, table.user_id] }),
+}))
+
+const postToMedia = pgTable("post_to_media", {
+    post_id: varchar("post_id").notNull().references(() => post.postId),
+    media_id: varchar("media_id").notNull().references(() => media.media_id),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.post_id, table.media_id] }),
 }))
 
 const comment = pgTable("comment", {
@@ -210,5 +216,5 @@ export const schema = {
     user, follow, profile,
     categories, post, postToCategory,
     comment, commentReply,
-    media, postToUser
+    media, postToUser, postToMedia
 };
