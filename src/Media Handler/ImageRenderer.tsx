@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState, useEffect } from 'react';
 
-const IMAGEKIT_URL = import.meta.env.VITE_IMAGEKIT_URL_ENDPOINT;
+import { clientEnv } from '@/lib/client-env';
+
+const IMAGEKIT_URL = clientEnv.imagekitUrlEndpoint;
 
 // ──────────────────────────────────────────────────────────────
 // APPROACH 1: Blob (commented out)

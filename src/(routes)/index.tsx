@@ -3,6 +3,7 @@ import ImageRenderer from "../Media Handler/ImageRenderer";
 import { createFileRoute, Link } from '@tanstack/react-router';
 import ImageUploader from "../Media Handler/ImageUploader";
 
+
 // 1. TanStack Router Configuration
 export const Route = createFileRoute('/')({
     component: IndexPage,
@@ -96,21 +97,13 @@ function IndexPage() {
                     {/* Video Post 1 */}
                     <article className="bg-white p-4 rounded-2xl shadow-sm border">
                         <video
-                            src="videos/زيارة.mp4"
+                            src="../../videos/زيارة.mp4"
                             controls
                             className='w-full rounded-xl bg-black max-h-[600px] object-contain'
                         />
                     </article>
 
-                    {/* Video Post 2 */}
-                    <article className="bg-white p-4 rounded-2xl shadow-sm border">
-                        <video
-                            src="videos/3 HOUR STUDY WITH ME  Background noise, Rain Sounds, 10-min break, No Music - Merve (1080p, h264, youtube).mp4"
-                            controls
-                            className='w-full rounded-xl bg-black max-h-[600px] object-contain'
-                        />
-                    </article>
-
+                  
                     {/* ImageKit Post */}
                     <article className="bg-white p-4 rounded-2xl shadow-sm border flex justify-evenly items-center gap-80">
                         <ImageRenderer />
@@ -128,5 +121,3 @@ function IndexPage() {
         </main>
     );
 }
-
-export default IndexPage;

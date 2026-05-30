@@ -1,3 +1,4 @@
+import { clientEnv } from '@/lib/client-env';
 import {
     ImageKitAbortError,
     ImageKitInvalidRequestError,
@@ -55,7 +56,7 @@ const ImageUploader = () => {
                 token: authParams.token,
                 signature: authParams.signature,
                 expire: authParams.expire,
-                publicKey: "your_public_api_key_here", // Safe to expose in React
+                publicKey: clientEnv.imagekitPublicKey,
 
                 onProgress: (event) => {
                     setProgress((event.loaded / event.total) * 100);
@@ -64,9 +65,13 @@ const ImageUploader = () => {
             });
             console.log("Upload response:", uploadResponse);
             setUploadStatus("success");
-        } catch (error: any) {
+        } catch (error: unknown) {
             setUploadStatus("error");
-            setErrorMessage(error?.message || "An unknown error occurred during upload.");
+            setErrorMessage(
+                error instanceof Error
+                    ? error.message
+                    : "An unknown error occurred during upload.",
+            );
 
             if (error instanceof ImageKitAbortError) {
                 console.error("Upload aborted:", error.reason);
