@@ -97,7 +97,7 @@ function IndexPage() {
                     {/* Video Post 1 */}
                     <article className="bg-white p-4 rounded-2xl shadow-sm border">
                         <video
-                            src="../../videos/زيارة.mp4"
+                            src="/videos/زيارة.mp4"
                             controls
                             className='w-full rounded-xl bg-black max-h-[600px] object-contain'
                         />

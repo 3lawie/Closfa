@@ -23,8 +23,8 @@ const RootLayout = () => {
         <QueryClientProvider client={queryClient}>
             <ImageKitProvider urlEndpoint={clientEnv.imagekitUrlEndpoint}>
                 <Auth0Provider
-                    domain={clientEnv.auth0Domain}
-                    clientId={clientEnv.auth0ClientId}
+                    domain={clientEnv.auth0Domain ?? ''}
+                    clientId={clientEnv.auth0ClientId ?? ''}
                     authorizationParams={{ redirect_uri: window.location.origin }}>
                     <Outlet />
                 </Auth0Provider>
