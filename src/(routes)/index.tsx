@@ -103,9 +103,9 @@ function IndexPage() {
                         />
                     </article>
 
-                  
+
                     {/* ImageKit Post */}
-                    <article className="bg-white p-4 rounded-2xl shadow-sm border flex justify-evenly items-center gap-80">
+                    <article className="bg-white p-6 rounded-2xl shadow-sm border border-transparent flex flex-col justify-center items-center gap-2">
                         <ImageRenderer />
                         <Link to="/Todo">
                             <button className="bg-amber-500 text-white px-4 py-2 rounded-lg mt-4">Go to Todo</button>

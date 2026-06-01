@@ -98,7 +98,7 @@ function useIsVisible() {
   return { ref, isVisible };
 }
 
-export default function ImageRenderer({ imageSource = "default-image.jpg" }) {
+export default function ImageRenderer({ imageSource = "Screenshot_2026-04-26_181950_JIU0Hef83.png" }) {
   const { ref, isVisible } = useIsVisible();
 
   // QUERY 1: Runs immediately on mount — just a HEAD request (~0 bytes downloaded)
