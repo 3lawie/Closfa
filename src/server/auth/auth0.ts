@@ -81,7 +81,7 @@ function getStateCookie(): { state: string; codeVerifier: string } | null {
     const cookieHeader = request.headers.get('cookie')
     if (!cookieHeader) return null
     const cookies = Object.fromEntries(
-      cookieHeader.split(';').map((c) => {
+      cookieHeader.split(';').map((c: string) => {
         const [k, ...v] = c.trim().split('=')
         return [k.trim(), decodeURIComponent(v.join('='))]
       })
