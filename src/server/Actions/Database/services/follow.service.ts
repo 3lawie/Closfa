@@ -15,10 +15,10 @@ export const followUser = createServerFn({ method: 'POST' })
     }
 
     const existingFollow = await db.query.follow.findFirst({
-      where: and(
-        eq(schema.follow.followerId, userId),
-        eq(schema.follow.followedId, targetUserId)
-      )
+      where: {
+        followerId: userId,
+        followedId: targetUserId,
+      }
     })
 
     if (existingFollow) {

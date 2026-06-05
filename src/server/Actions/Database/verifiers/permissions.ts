@@ -14,7 +14,6 @@
 
 import { db } from '../../../db'
 import { schema } from '../../../db/schema'
-import { eq, and } from 'drizzle-orm'
 
 const ROLE_LEVELS = {
   moderator: 1,
@@ -30,15 +29,15 @@ export async function getProfilePermission(
 ) {
   // Check if user is a member of this profile's mod team
   const membership = await db.query.profileMember.findFirst({
-    where: and(
-      eq(schema.profileMember.profileId, profileId),
-      eq(schema.profileMember.userId, userId),
-    ),
+    where: {
+      profileId,
+      userId,
+    },
   })
 
   // Check if user is the profile owner
   const profile = await db.query.profile.findFirst({
-    where: eq(schema.profile.profile_id, profileId),
+    where: { profile_id: profileId },
   })
   const isOwner = profile?.userId === userId
 

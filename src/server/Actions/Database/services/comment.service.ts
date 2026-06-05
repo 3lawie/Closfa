@@ -36,7 +36,7 @@ export const deleteComment = createServerFn({ method: 'POST' })
     const { commentId } = data as unknown as { commentId: string }
 
     const comment = await db.query.comment.findFirst({
-      where: eq(schema.comment.comment_id, commentId),
+      where: { comment_id: commentId },
       with: { post: true },
     })
 
@@ -50,7 +50,7 @@ export const deleteComment = createServerFn({ method: 'POST' })
     if (!isOwner) {
       // Find the profile of the post author
       const authorProfile = await db.query.profile.findFirst({
-        where: eq(schema.profile.userId, comment.post.author_id),
+        where: { userId: comment.post!.author_id },
       })
 
       if (authorProfile) {

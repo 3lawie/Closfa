@@ -122,9 +122,8 @@ function getAuth0Config() {
 }
 
 function getCallbackUrl(): string {
-  // In production, the Cloudflare Worker URL / custom domain
-  // In dev, always localhost:3000
-  const base = process.env.APP_URL ?? 'http://localhost:3000'
+  const request = getRequest()
+  const base = request ? new URL(request.url).origin : (process.env.APP_URL ?? 'http://localhost:5173')
   return `${base}/api/auth/callback`
 }
 
@@ -246,7 +245,8 @@ export async function getUserInfo(accessToken: string): Promise<Auth0UserInfo> {
  */
 export function getAuth0LogoutUrl(): string {
   const { domain, clientId } = getAuth0Config()
-  const base = process.env.APP_URL ?? 'http://localhost:3000'
+  const request = getRequest()
+  const base = request ? new URL(request.url).origin : (process.env.APP_URL ?? 'http://localhost:5173')
 
   const params = new URLSearchParams({
     client_id: clientId,

@@ -44,7 +44,7 @@ export const deletePost = createServerFn({ method: 'POST' })
 
     // 1. Verify
     const post = await db.query.post.findFirst({
-      where: eq(schema.post.postId, postId),
+      where: { postId },
     })
 
     if (!post) {

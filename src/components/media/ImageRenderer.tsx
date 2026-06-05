@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState, useEffect } from 'react'
 import { clientEnv } from '@/lib/env/client-env'
+import { createServerFn } from '@tanstack/react-start'
 
 // ──────────────────────────────────────────────────────────────
 // ImageRenderer — two-phase lazy loading via IntersectionObserver
@@ -24,22 +25,35 @@ import { clientEnv } from '@/lib/env/client-env'
 const IMAGEKIT_URL = clientEnv.imagekitUrlEndpoint
 
 // ──────────────────────────────────────────────────────────────
-// Phase 1: Lightweight HEAD check — no image bytes downloaded
+// Phase 1: Lightweight HEAD check — executed securely on the server
 // ──────────────────────────────────────────────────────────────
-async function fetchImageMeta(imagePath: string) {
-  const displayUrl = `${IMAGEKIT_URL}/tr:w-500,h-500,f-avif/${imagePath}`
-  const originalUrl = `${IMAGEKIT_URL}/${imagePath}`
+export const fetchImageMetaFn = createServerFn({ method: 'GET' })
+  .handler(async ({ data }) => {
+    const imagePath = data as unknown as string
+    const displayUrl = `${IMAGEKIT_URL}/tr:w-500,h-500,f-avif/${imagePath}`
+    const originalUrl = `${IMAGEKIT_URL}/${imagePath}`
 
-  const response = await fetch(displayUrl, { method: 'HEAD' })
-  if (!response.ok) throw new Error(`Image not found: ${response.status}`)
+    let contentType: string | null = null
+    let size: string | null = null
 
-  return {
-    displayUrl,    // optimized 500×500 AVIF for rendering
-    originalUrl,   // no transforms — used for dimension reading
-    contentType: response.headers.get('content-type'),
-    size: response.headers.get('content-length'),
-  }
-}
+    try {
+      const response = await fetch(displayUrl, { method: 'HEAD' })
+      if (response.ok) {
+        contentType = response.headers.get('content-type')
+        size = response.headers.get('content-length')
+      }
+    } catch (e) {
+      console.error('[fetchImageMetaFn] Failed to fetch image metadata headers:', e)
+    }
+
+    return {
+      displayUrl,    // optimized 500×500 AVIF for rendering
+      originalUrl,   // no transforms — used for dimension reading
+      contentType,
+      size,
+    }
+  })
+
 
 // ──────────────────────────────────────────────────────────────
 // Phase 2: Load original image to read true dimensions
@@ -103,7 +117,7 @@ export default function ImageRenderer({
   // Phase 1: HEAD request — runs immediately, no image bytes
   const meta = useQuery({
     queryKey: ['image-meta', imageSource],
-    queryFn: () => fetchImageMeta(imageSource),
+    queryFn: () => fetchImageMetaFn({ data: imageSource as any }),
     staleTime: 1000 * 60 * 30,
   })
 

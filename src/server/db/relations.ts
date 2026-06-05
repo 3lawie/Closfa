@@ -99,7 +99,7 @@ export const relations = defineRelations(schema, (r) => ({
             from: r.post.author_id.through(r.postToUser.post_id),
             to: r.user.userId.through(r.postToUser.user_id),
         }),
-        comments: r.many.comment(),
+        commentsList: r.many.comment(),
         // Many categories through the junction table
         categories: r.many.categories({
             from: r.post.postId.through(r.postToCategory.post_id),
@@ -200,7 +200,7 @@ export const relations = defineRelations(schema, (r) => ({
             from: r.profileMember.userId,
             to: r.user.userId,
         }),
-        assignedBy: r.one.user({
+        assignedByUser: r.one.user({
             from: r.profileMember.assignedBy,
             to: r.user.userId,
         }),
@@ -211,7 +211,7 @@ export const relations = defineRelations(schema, (r) => ({
             from: r.report.reporterId,
             to: r.user.userId,
         }),
-        reviewedBy: r.one.user({
+        reviewedByUser: r.one.user({
             from: r.report.reviewedBy,
             to: r.user.userId,
         }),

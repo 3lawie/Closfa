@@ -9,29 +9,27 @@
 // ──────────────────────────────────────────────────────────────
 
 import { db } from './db'
-import { schema } from './db/schema'
-import { eq, desc, and } from 'drizzle-orm'
 
 export const queries = {
   user: {
     getById: (userId: string) =>
       db.query.user.findFirst({
-        where: eq(schema.user.userId, userId),
+        where: { userId },
       }),
 
     getByEmail: (email: string) =>
       db.query.user.findFirst({
-        where: eq(schema.user.email, email),
+        where: { email },
       }),
 
     getByAuthProviderId: (authId: string) =>
       db.query.user.findFirst({
-        where: eq(schema.user.authProviderId, authId),
+        where: { authProviderId: authId },
       }),
 
     getModeratorProfiles: (userId: string) =>
       db.query.profileMember.findMany({
-        where: eq(schema.profileMember.userId, userId),
+        where: { userId },
         with: { profile: true },
       }),
   },
@@ -39,12 +37,12 @@ export const queries = {
   profile: {
     getByUserId: (userId: string) =>
       db.query.profile.findFirst({
-        where: eq(schema.profile.userId, userId),
+        where: { userId },
       }),
 
     getModerators: (profileId: string) =>
       db.query.profileMember.findMany({
-        where: eq(schema.profileMember.profileId, profileId),
+        where: { profileId },
         with: { user: true },
       }),
   },
@@ -52,30 +50,30 @@ export const queries = {
   post: {
     getFeed: (limit = 20) =>
       db.query.post.findMany({
-        where: eq(schema.post.is_published, true),
-        orderBy: desc(schema.post.published_at),
+        where: { is_published: true },
+        orderBy: { published_at: 'desc' },
         limit,
         with: { author: true, media: true },
       }),
 
     getById: (postId: string) =>
       db.query.post.findFirst({
-        where: eq(schema.post.postId, postId),
-        with: { author: true, media: true, comments: true },
+        where: { postId },
+        with: { author: true, media: true, commentsList: true },
       }),
 
     getByAuthor: (authorId: string) =>
       db.query.post.findMany({
-        where: eq(schema.post.author_id, authorId),
-        orderBy: desc(schema.post.createdAt),
+        where: { author_id: authorId },
+        orderBy: { createdAt: 'desc' },
       }),
   },
 
   comment: {
     getByPost: (postId: string) =>
       db.query.comment.findMany({
-        where: eq(schema.comment.postId, postId),
-        orderBy: desc(schema.comment.createdAt),
+        where: { postId },
+        orderBy: { createdAt: 'desc' },
         with: { author: true, replies: true },
       }),
   },
@@ -83,19 +81,21 @@ export const queries = {
   report: {
     getPending: () =>
       db.query.report.findMany({
-        where: eq(schema.report.status, 'pending'),
-        orderBy: desc(schema.report.createdAt),
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'desc' },
       }),
   },
 
   notification: {
     getUnread: (userId: string) =>
       db.query.notification.findMany({
-        where: and(
-          eq(schema.notification.userId, userId),
-          eq(schema.notification.read, false),
-        ),
-        orderBy: desc(schema.notification.createdAt),
+        where: {
+          userId,
+          read: false,
+        },
+        orderBy: { createdAt: 'desc' },
       }),
   },
 }
+
+

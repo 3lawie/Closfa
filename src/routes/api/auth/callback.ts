@@ -37,7 +37,7 @@ export const Route = createFileRoute('/api/auth/callback')({
           // ── Step 3: Upsert user in DB ──
           // authProviderId = Auth0's "sub" (e.g. "auth0|abc123" or "google-oauth2|xyz")
           let user = await db.query.user.findFirst({
-            where: eq(schema.user.authProviderId, userInfo.sub),
+            where: { authProviderId: userInfo.sub },
           })
 
           if (!user) {
@@ -66,7 +66,7 @@ export const Route = createFileRoute('/api/auth/callback')({
               isVerified: false,
             })
 
-            user = { userId, authProviderId: userInfo.sub } as typeof user
+            user = { userId, authProviderId: userInfo.sub } as any
           }
 
           // ── Step 4: Create encrypted session cookie ──
