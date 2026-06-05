@@ -8,6 +8,8 @@ import {
 } from "@imagekit/react";
 import { useRef, useState } from "react";
 
+import { getImageKitAuth } from '@/server/actions/ThirdParty/services/imagekit.service';
+
 const ImageUploader = () => {
     const [progress, setProgress] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
@@ -16,13 +18,10 @@ const ImageUploader = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const abortController = new AbortController();
 
-    // 1. Fetch the secure signature from your backend
+    // 1. Fetch the secure signature from your backend via RPC Server Function
     const authenticator = async () => {
         try {
-            const response = await fetch("/api/imagekit-auth");
-            if (!response.ok) throw new Error("Failed to fetch auth parameters");
-
-            const data = await response.json();
+            const data = await getImageKitAuth();
             return data; // Returns { token, signature, expire }
         } catch (error) {
             console.error("Authentication error:", error);

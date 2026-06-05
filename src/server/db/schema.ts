@@ -84,16 +84,11 @@ const user = pgTable("user", {
     authProviderId: text("auth_provider_id").notNull(),
     authProvider: text("auth_provider").notNull().default("email"),
     emailVerified: boolean("email_verified").notNull().default(false),
-    password: text("password"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
     userEmailIndex: index("user_email_index").on(table.email),
     userNicknameIndex: index("user_nickname_index").on(table.nickname),
-    passwordCheck: check(
-        "password_must_not_be_empty_when_provider_is_email",
-        sql`(${table.authProvider} <> 'email' OR ${table.password} IS NOT NULL)`
-    ),
 }));
 
 // Who follows whom:
@@ -118,6 +113,7 @@ const profile = pgTable("profile", {
     website: text("website"),
     location: text("location"),
     image: varchar("image").references(() => media.media_id),
+    isVerified: boolean("is_verified").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 })
@@ -212,9 +208,78 @@ const commentReply = pgTable("comment_reply", {
     mediaCheck: check("reply_sticker_requires_media", sql`(${table.comment_type} <> 'sticker' OR ${table.media_id} IS NOT NULL)`),
 }))
 
+const profileRoleEnum = pgEnum("profile_role", [
+    "co_owner", "vip_moderator", "moderator"
+])
+
+const profileMember = pgTable("profile_member", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    profileId: varchar("profile_id").notNull().references(() => profile.profile_id),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    role: profileRoleEnum("role").notNull().default("moderator"),
+    assignedAt: timestamp("assigned_at").defaultNow(),
+    assignedBy: varchar("assigned_by").references(() => user.userId),
+}, (table) => ({
+    memberUnique: unique("profile_member_unique").on(table.profileId, table.userId),
+    profileIndex: index("profile_member_profile_idx").on(table.profileId),
+    userIndex: index("profile_member_user_idx").on(table.userId),
+}))
+
+const reportStatusEnum = pgEnum("report_status", [
+    "pending", "reviewed", "resolved", "dismissed"
+])
+
+const report = pgTable("report", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    reporterId: varchar("reporter_id").notNull().references(() => user.userId),
+    targetType: text("target_type").notNull(), // 'post', 'comment', 'user'
+    targetId: varchar("target_id").notNull(),
+    reason: text("reason").notNull(),
+    details: text("details"),
+    status: reportStatusEnum("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").defaultNow(),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedBy: varchar("reviewed_by").references(() => user.userId),
+}, (table) => ({
+    reportStatusIndex: index("report_status_idx").on(table.status),
+}))
+
+const auditActionEnum = pgEnum("audit_action", [
+    "delete_post", "delete_comment", "ban_user", "warn_user",
+    "assign_role", "revoke_role", "hide_content"
+])
+
+const auditLog = pgTable("audit_log", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    actorId: varchar("actor_id").notNull().references(() => user.userId),
+    action: auditActionEnum("action").notNull(),
+    targetType: text("target_type").notNull(), // 'post', 'comment', 'user', 'profile'
+    targetId: varchar("target_id").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+})
+
+const notificationTypeEnum = pgEnum("notification_type", [
+    "like", "comment", "reply", "follow", "mention", "system", "moderation"
+])
+
+const notification = pgTable("notification", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    actorId: varchar("actor_id").references(() => user.userId),
+    type: notificationTypeEnum("type").notNull(),
+    entityId: varchar("entity_id"), // Post ID, Comment ID, etc.
+    message: text("message"),
+    read: boolean("read").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    notificationUserIndex: index("notification_user_idx").on(table.userId, table.read),
+}))
+
 export const schema = {
     user, follow, profile,
     categories, post, postToCategory,
     comment, commentReply,
-    media, postToUser, postToMedia
+    media, postToUser, postToMedia,
+    profileMember, report, auditLog, notification
 };
