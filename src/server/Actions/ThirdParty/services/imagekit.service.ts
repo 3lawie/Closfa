@@ -16,7 +16,7 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import crypto from 'crypto'
-import { verifyImageKitUpload, type FileMetadata } from '../verifiers/imagekit.verify'
+import { verifyImageKitUpload, type FileMetadata } from "../verifiers/imagekit.verify"
 
 type AuthResult = {
   token: string
@@ -52,7 +52,7 @@ export const getImageKitAuth = createServerFn({ method: 'GET' })
  */
 export const getImageKitAuthValidated = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<AuthResult> => {
-    const file = data as FileMetadata
+    const file = data as unknown as FileMetadata
 
     const check = verifyImageKitUpload(file)
     if (!check.ok) {

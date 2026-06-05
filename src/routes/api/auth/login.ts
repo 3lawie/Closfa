@@ -1,12 +1,16 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
+import { createFileRoute } from '@tanstack/react-router'
 import { getAuth0LoginUrl } from '@/server/auth/auth0'
 
-export const APIRoute = createAPIFileRoute('/api/auth/login')({
-  GET: async () => {
-    const url = await getAuth0LoginUrl()
-    return new Response(null, {
-      status: 302,
-      headers: { Location: url },
-    })
+export const Route = createFileRoute('/api/auth/login')({
+  server: {
+    handlers: {
+      GET: async () => {
+        const url = await getAuth0LoginUrl()
+        return new Response(null, {
+          status: 302,
+          headers: { Location: url },
+        })
+      },
+    },
   },
 })

@@ -11,6 +11,6 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { schema } from './schema'
-import * as relations from './relations'
+import { relations } from './relations'
 
-export const db = drizzle(process.env.DATABASE_URL!, { schema: { ...schema, ...relations } })
+export const db = drizzle(process.env.DATABASE_URL!, { schema, relations })

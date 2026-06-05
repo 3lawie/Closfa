@@ -26,7 +26,7 @@
 //   6. Browser gets ONLY the HttpOnly cookie (no tokens)
 // ──────────────────────────────────────────────────────────────
 
-import { getWebRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 
 // ──────────────────────────────────────────────────────────────
 // PKCE Helpers
@@ -76,7 +76,7 @@ function setStateCookie(state: string, codeVerifier: string): void {
 
 function getStateCookie(): { state: string; codeVerifier: string } | null {
   try {
-    const request = getWebRequest()
+    const request = getRequest()
     if (!request) return null
     const cookieHeader = request.headers.get('cookie')
     if (!cookieHeader) return null

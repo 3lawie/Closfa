@@ -1,11 +1,11 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { getSession } from '@/server/auth/session'
+import { getSessionFn } from '@/server/auth/sessionFn'
 import { LoginButton } from '@/components/auth'
 
 // If already logged in, redirect to home
 export const Route = createFileRoute('/login')({
   beforeLoad: async () => {
-    const session = await getSession()
+    const session = await getSessionFn()
     if (session) {
       throw redirect({ to: '/' })
     }

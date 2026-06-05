@@ -6,8 +6,8 @@ import {
   upload,
 } from '@imagekit/react'
 import { useRef, useState } from 'react'
-import { clientEnv } from '@/lib/env/client-env'
-import { getImageKitAuth } from '@/server/Actions/ThirdParty/services/imagekit.service'
+import { clientEnv } from "../../lib/env/client-env"
+import { getImageKitAuth } from '@/server/actions/ThirdParty/services/imagekit.service'
 
 // ──────────────────────────────────────────────────────────────
 // ImageUploader — direct-to-ImageKit uploads via HMAC auth

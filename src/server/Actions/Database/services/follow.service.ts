@@ -8,7 +8,7 @@ export const followUser = createServerFn({ method: 'POST' })
   .middleware([authMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { targetUserId } = data as { targetUserId: string }
+    const { targetUserId } = data as unknown as { targetUserId: string }
 
     if (userId === targetUserId) {
       throw new Error("You cannot follow yourself")
@@ -37,7 +37,7 @@ export const unfollowUser = createServerFn({ method: 'POST' })
   .middleware([authMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { targetUserId } = data as { targetUserId: string }
+    const { targetUserId } = data as unknown as { targetUserId: string }
 
     await db.delete(schema.follow).where(
       and(

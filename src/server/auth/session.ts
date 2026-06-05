@@ -48,7 +48,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { EncryptJWT, jwtDecrypt } from 'jose'
-import { getWebRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 
 /** What we store inside the session cookie */
 export type SessionData = {
@@ -92,7 +92,7 @@ function getSecretKey(): Uint8Array {
  */
 export async function getSession(): Promise<SessionData | null> {
   try {
-    const request = getWebRequest()
+    const request = getRequest()
     if (!request) return null
 
     const cookieHeader = request.headers.get('cookie')
@@ -100,7 +100,7 @@ export async function getSession(): Promise<SessionData | null> {
 
     // Parse cookies manually — no cookie-parser dependency needed
     const cookies = Object.fromEntries(
-      cookieHeader.split(';').map((c) => {
+      cookieHeader.split(';').map((c: string) => {
         const [k, ...v] = c.trim().split('=')
         return [k.trim(), decodeURIComponent(v.join('='))]
       })

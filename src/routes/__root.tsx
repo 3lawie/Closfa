@@ -2,7 +2,7 @@ import '../index.css'
 import { createRootRoute, Outlet, HeadContent, Scripts } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ImageKitProvider } from '@imagekit/react'
-import { clientEnv } from '@/lib/env/client-env'
+import { clientEnv } from '../lib/env/client-env'
 import type { QueryClient } from '@tanstack/react-query'
 
 export const Route = createRootRoute({

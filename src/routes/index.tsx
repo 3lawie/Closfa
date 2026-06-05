@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/auth/session.server'
+import { getSessionFn } from '@/server/auth/sessionFn'
 import ImageRenderer from '@/components/media/ImageRenderer'
 import ImageUploader from '@/components/media/ImageUploader'
 import { Navbar } from '@/components/layout/Navbar'

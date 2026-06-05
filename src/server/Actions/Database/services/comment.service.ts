@@ -33,7 +33,7 @@ export const deleteComment = createServerFn({ method: 'POST' })
   .middleware([authMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { commentId } = data as { commentId: string }
+    const { commentId } = data as unknown as { commentId: string }
 
     const comment = await db.query.comment.findFirst({
       where: eq(schema.comment.comment_id, commentId),

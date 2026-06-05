@@ -40,7 +40,7 @@ export const deletePost = createServerFn({ method: 'POST' })
   .middleware([authMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { postId } = data as { postId: string }
+    const { postId } = data as unknown as { postId: string }
 
     // 1. Verify
     const post = await db.query.post.findFirst({
