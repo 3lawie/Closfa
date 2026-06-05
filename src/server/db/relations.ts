@@ -1,5 +1,6 @@
+import { defineRelations } from "drizzle-orm";
 import { schema } from "./schema";
-import { defineRelations } from "drizzle-orm/relations";
+
 
 export const relations = defineRelations(schema, (r) => ({
     // profile belongs to one user, has one media (avatar)

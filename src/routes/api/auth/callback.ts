@@ -1,3 +1,11 @@
+// ──────────────────────────────────────────────────────────────
+// Auth0 Callback — Authorization Code + PKCE exchange
+//
+// This is the ONLY route that touches Auth0 tokens.
+// Tokens never reach the browser — they stay on the server.
+// The browser receives only an encrypted HttpOnly session cookie.
+// ──────────────────────────────────────────────────────────────
+
 import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { exchangeCodeForToken, getUserInfo } from '@/server/auth/auth0'
 import { createSession } from '@/server/auth/session'
@@ -10,48 +18,72 @@ export const APIRoute = createAPIFileRoute('/api/auth/callback')({
   GET: async ({ request }) => {
     const url = new URL(request.url)
     const code = url.searchParams.get('code')
+    const state = url.searchParams.get('state')
 
-    if (!code) {
-      return new Response('Missing code', { status: 400 })
+    if (!code || !state) {
+      return new Response('Missing code or state parameter', { status: 400 })
     }
 
     try {
-      const tokens = await exchangeCodeForToken(code)
+      // ── Step 1: Exchange authorization code for tokens (server-to-server) ──
+      // Also validates the state parameter to prevent CSRF
+      const tokens = await exchangeCodeForToken(code, state)
+
+      // ── Step 2: Fetch user profile from Auth0 (server-to-server) ──
       const userInfo = await getUserInfo(tokens.access_token)
 
-      const auth0Id = userInfo.sub
-
+      // ── Step 3: Upsert user in DB ──
+      // authProviderId = Auth0's "sub" (e.g. "auth0|abc123" or "google-oauth2|xyz")
       let user = await db.query.user.findFirst({
-        where: eq(schema.user.auth0Id, auth0Id),
+        where: eq(schema.user.authProviderId, userInfo.sub),
       })
 
       if (!user) {
+        // First login — create the user record
         const userId = createId()
+
+        // Generate a unique nickname: use Auth0 nickname, fall back to email local part
+        const rawNickname = userInfo.nickname || userInfo.email.split('@')[0]
+        // Sanitize to alphanumeric + underscores, max 30 chars
+        const nickname = rawNickname.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)
+
         await db.insert(schema.user).values({
           userId,
-          auth0Id,
+          name: userInfo.name,
+          nickname,
           email: userInfo.email,
-          username: userInfo.nickname || userInfo.name || userId,
-          role: 'user',
+          authProviderId: userInfo.sub,
+          authProvider: userInfo.sub.split('|')[0], // e.g. "auth0", "google-oauth2"
+          emailVerified: userInfo.email_verified ?? false,
         })
-        user = { userId, auth0Id } as any
+
+        // Create the user's profile record (one-to-one with user)
+        await db.insert(schema.profile).values({
+          profile_id: createId(),
+          userId,
+          isVerified: false,
+        })
+
+        user = { userId, authProviderId: userInfo.sub } as typeof user
       }
 
+      // ── Step 4: Create encrypted session cookie ──
       await createSession({
-        userId: user.userId,
+        userId: user!.userId,
         sub: userInfo.sub,
         email: userInfo.email,
         name: userInfo.name,
-        nickname: userInfo.nickname,
+        nickname: userInfo.nickname || '',
       })
 
+      // ── Step 5: Redirect to app ──
       return new Response(null, {
         status: 302,
         headers: { Location: '/' },
       })
     } catch (err) {
-      console.error('Auth callback failed:', err)
-      return new Response('Authentication Failed', { status: 500 })
+      console.error('[Auth Callback] Failed:', err)
+      return new Response('Authentication failed. Please try again.', { status: 500 })
     }
   },
 })

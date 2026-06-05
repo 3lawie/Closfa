@@ -2,8 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { authMiddleware } from '@/server/auth/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
-import { verifyIsOwner } from '../verifiers/auth'
-import { getProfilePermission } from '../verifiers/permissions'
+import { getProfilePermission } from "../verifiers/permissions"
 import { eq } from 'drizzle-orm'
 
 export const createComment = createServerFn({ method: 'POST' })
@@ -26,7 +25,7 @@ export const createComment = createServerFn({ method: 'POST' })
     // Update comment count on post
     // Note: Neon HTTP driver doesn't support interactive transactions
     // So we do it sequentially, or use a trigger/view ideally.
-    
+
     return { success: true, commentId: newComment.commentId }
   })
 
@@ -45,7 +44,7 @@ export const deleteComment = createServerFn({ method: 'POST' })
 
     // 1. Verify
     const isOwner = comment.userId === userId
-    
+
     // If not owner, check if they are a moderator of the post author's profile
     let isMod = false
     if (!isOwner) {
@@ -53,7 +52,7 @@ export const deleteComment = createServerFn({ method: 'POST' })
       const authorProfile = await db.query.profile.findFirst({
         where: eq(schema.profile.userId, comment.post.author_id),
       })
-      
+
       if (authorProfile) {
         const perm = await getProfilePermission(userId, authorProfile.profile_id)
         if (perm.authorized && perm.canDeleteComment) {

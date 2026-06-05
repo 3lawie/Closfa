@@ -12,8 +12,8 @@
 //   if (perm.authorized && perm.canDeleteComment) { ... }
 // ──────────────────────────────────────────────────────────────
 
-import { db } from '../../db'
-import { schema } from '../../db/schema'
+import { db } from '../../../db'
+import { schema } from '../../../db/schema'
 import { eq, and } from 'drizzle-orm'
 
 const ROLE_LEVELS = {
@@ -57,18 +57,18 @@ export async function getProfilePermission(
     role,
     level,
     // co_owner+ (level 3+)
-    canDeleteContent:       level >= ROLE_LEVELS.co_owner,
-    canBanUser:             level >= ROLE_LEVELS.co_owner,
-    canAssignModerator:     level >= ROLE_LEVELS.co_owner,
+    canDeleteContent: level >= ROLE_LEVELS.co_owner,
+    canBanUser: level >= ROLE_LEVELS.co_owner,
+    canAssignModerator: level >= ROLE_LEVELS.co_owner,
     canEditProfileSettings: level >= ROLE_LEVELS.co_owner,
     // vip_moderator+ (level 2+)
-    canHideContent:         level >= ROLE_LEVELS.vip_moderator,
-    canMuteUser:            level >= ROLE_LEVELS.vip_moderator,
-    canPinPost:             level >= ROLE_LEVELS.vip_moderator,
-    canReviewReports:       level >= ROLE_LEVELS.vip_moderator,
+    canHideContent: level >= ROLE_LEVELS.vip_moderator,
+    canMuteUser: level >= ROLE_LEVELS.vip_moderator,
+    canPinPost: level >= ROLE_LEVELS.vip_moderator,
+    canReviewReports: level >= ROLE_LEVELS.vip_moderator,
     // all moderators (level 1+)
-    canApprovePost:         level >= ROLE_LEVELS.moderator,
-    canDeleteComment:       level >= ROLE_LEVELS.moderator,
-    canWarnUser:            level >= ROLE_LEVELS.moderator,
+    canApprovePost: level >= ROLE_LEVELS.moderator,
+    canDeleteComment: level >= ROLE_LEVELS.moderator,
+    canWarnUser: level >= ROLE_LEVELS.moderator,
   }
 }
