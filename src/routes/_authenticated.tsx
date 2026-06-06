@@ -5,7 +5,7 @@ export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async () => {
     // We check the session on the server side
     const session = await getSessionFn()
-    
+
     if (!session) {
       throw redirect({ href: '/api/auth/login' })
     }

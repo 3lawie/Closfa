@@ -3,25 +3,25 @@ import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, numeric, pgEnum, pgTable, primaryKey, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 
 
-const postStatusEnum = pgEnum("post_status", [
+export const postStatusEnum = pgEnum("post_status", [
     "editing", "draft", "pending", "published", "unpublished", "archived", "rejected"
 ])
 
-const postTypeEnum = pgEnum("post_type", [
+export const postTypeEnum = pgEnum("post_type", [
     "collab", "solo"
 ])
 
-const commentTypeEnum = pgEnum("comment_type", [
+export const commentTypeEnum = pgEnum("comment_type", [
     "text", "sticker"
 ])
 
-const mediaTypeEnum = pgEnum("media_type", [
+export const mediaTypeEnum = pgEnum("media_type", [
     "image", "video", "audio"
 ])
 
 // Resolution labels — computed from width/height on upload
 // SD = below 720p, HD = 720p, FHD = 1080p, QHD = 1440p, UHD = 4K+
-const resolutionEnum = pgEnum("resolution", [
+export const resolutionEnum = pgEnum("resolution", [
     "SD", "HD", "FHD", "QHD", "UHD"
 ])
 
@@ -29,7 +29,7 @@ const resolutionEnum = pgEnum("resolution", [
 // Media table — uploaded first, then referenced by profile/post/comment
 // Fields are nullable based on media_type (enforced by CHECK constraints)
 // ──────────────────────────────────────────────────────────────
-const media = pgTable("media", {
+export const media = pgTable("media", {
     media_id: varchar("media_id").primaryKey().$defaultFn(() => createId()),
     user_id: varchar("user_id").notNull(),  // who uploaded it (no FK to avoid circular ref with user)
 
@@ -76,7 +76,7 @@ const media = pgTable("media", {
     ),
 }))
 
-const user = pgTable("user", {
+export const user = pgTable("user", {
     userId: varchar("user_id").primaryKey().$defaultFn(() => createId()),
     name: text("name").notNull(),
     nickname: text("nickname").notNull().unique(),
@@ -96,7 +96,7 @@ const user = pgTable("user", {
 //   followingId = the person being followed
 // Query "who does X follow?" → WHERE user_id = X
 // Query "who follows X?"     → WHERE following_id = X
-const follow = pgTable("follow", {
+export const follow = pgTable("follow", {
     followId: varchar("follow_id").primaryKey().$defaultFn(() => createId()),
     followedId: varchar("user_id").notNull().references(() => user.userId),
     followerId: varchar("follower_id").notNull().references(() => user.userId),
@@ -106,7 +106,7 @@ const follow = pgTable("follow", {
     followUnique: unique("follow_unique").on(table.followerId, table.followedId),
 }))
 
-const profile = pgTable("profile", {
+export const profile = pgTable("profile", {
     profile_id: varchar("profile_id").primaryKey().$defaultFn(() => createId()),
     userId: varchar("user_id").notNull().references(() => user.userId),
     bio: text("bio"),
@@ -120,13 +120,13 @@ const profile = pgTable("profile", {
 
 // Admin-defined categories. name is the PK — prevents duplicates and allows
 // direct lookup/reference by name (used by the AI categorization system).
-const categories = pgTable("categories", {
+export const categories = pgTable("categories", {
     name: text("name").primaryKey(),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 })
 
-const post = pgTable("post", {
+export const post = pgTable("post", {
     postId: varchar("post_id").primaryKey().$defaultFn(() => createId()),
     content: text("content"),
     author_id: varchar("author_id").notNull().references(() => user.userId),
@@ -150,28 +150,28 @@ const post = pgTable("post", {
 }))
 
 // Junction: many posts ↔ many categories (for multi-category tagging)
-const postToCategory = pgTable("post_to_category", {
+export const postToCategory = pgTable("post_to_category", {
     post_id: varchar("post_id").notNull().references(() => post.postId),
     category_name: text("category_name").notNull().references(() => categories.name),
 }, (table) => ({
     pk: primaryKey({ columns: [table.post_id, table.category_name] }),
 }))
 
-const postToUser = pgTable("post_to_user", {
+export const postToUser = pgTable("post_to_user", {
     post_id: varchar("post_id").notNull().references(() => post.postId),
     user_id: varchar("user_id").notNull().references(() => user.userId),
 }, (table) => ({
     pk: primaryKey({ columns: [table.post_id, table.user_id] }),
 }))
 
-const postToMedia = pgTable("post_to_media", {
+export const postToMedia = pgTable("post_to_media", {
     post_id: varchar("post_id").notNull().references(() => post.postId),
     media_id: varchar("media_id").notNull().references(() => media.media_id),
 }, (table) => ({
     pk: primaryKey({ columns: [table.post_id, table.media_id] }),
 }))
 
-const comment = pgTable("comment", {
+export const comment = pgTable("comment", {
     comment_id: varchar("comment_id").primaryKey().$defaultFn(() => createId()),
     userId: varchar("user_id").notNull().references(() => user.userId),
     postId: varchar("post_id").notNull().references(() => post.postId),
@@ -189,7 +189,7 @@ const comment = pgTable("comment", {
     mediaCheck: check("comment_sticker_requires_media", sql`(${table.comment_type} <> 'sticker' OR ${table.media_id} IS NOT NULL)`),
 }))
 
-const commentReply = pgTable("comment_reply", {
+export const commentReply = pgTable("comment_reply", {
     reply_id: varchar("comment_reply_id").primaryKey().$defaultFn(() => createId()),
     parent_comment_id: varchar("parent_comment_id").notNull().references(() => comment.comment_id),
     post_id: varchar("post_id").notNull().references(() => post.postId),
@@ -208,11 +208,11 @@ const commentReply = pgTable("comment_reply", {
     mediaCheck: check("reply_sticker_requires_media", sql`(${table.comment_type} <> 'sticker' OR ${table.media_id} IS NOT NULL)`),
 }))
 
-const profileRoleEnum = pgEnum("profile_role", [
+export const profileRoleEnum = pgEnum("profile_role", [
     "co_owner", "vip_moderator", "moderator"
 ])
 
-const profileMember = pgTable("profile_member", {
+export const profileMember = pgTable("profile_member", {
     id: varchar("id").primaryKey().$defaultFn(() => createId()),
     profileId: varchar("profile_id").notNull().references(() => profile.profile_id),
     userId: varchar("user_id").notNull().references(() => user.userId),
@@ -225,11 +225,11 @@ const profileMember = pgTable("profile_member", {
     userIndex: index("profile_member_user_idx").on(table.userId),
 }))
 
-const reportStatusEnum = pgEnum("report_status", [
+export const reportStatusEnum = pgEnum("report_status", [
     "pending", "reviewed", "resolved", "dismissed"
 ])
 
-const report = pgTable("report", {
+export const report = pgTable("report", {
     id: varchar("id").primaryKey().$defaultFn(() => createId()),
     reporterId: varchar("reporter_id").notNull().references(() => user.userId),
     targetType: text("target_type").notNull(), // 'post', 'comment', 'user'
@@ -244,12 +244,12 @@ const report = pgTable("report", {
     reportStatusIndex: index("report_status_idx").on(table.status),
 }))
 
-const auditActionEnum = pgEnum("audit_action", [
+export const auditActionEnum = pgEnum("audit_action", [
     "delete_post", "delete_comment", "ban_user", "warn_user",
     "assign_role", "revoke_role", "hide_content"
 ])
 
-const auditLog = pgTable("audit_log", {
+export const auditLog = pgTable("audit_log", {
     id: varchar("id").primaryKey().$defaultFn(() => createId()),
     actorId: varchar("actor_id").notNull().references(() => user.userId),
     action: auditActionEnum("action").notNull(),
@@ -259,11 +259,11 @@ const auditLog = pgTable("audit_log", {
     createdAt: timestamp("created_at").defaultNow(),
 })
 
-const notificationTypeEnum = pgEnum("notification_type", [
+export const notificationTypeEnum = pgEnum("notification_type", [
     "like", "comment", "reply", "follow", "mention", "system", "moderation"
 ])
 
-const notification = pgTable("notification", {
+export const notification = pgTable("notification", {
     id: varchar("id").primaryKey().$defaultFn(() => createId()),
     userId: varchar("user_id").notNull().references(() => user.userId),
     actorId: varchar("actor_id").references(() => user.userId),
