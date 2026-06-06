@@ -110,7 +110,10 @@ export async function getSession(): Promise<SessionData | null> {
     if (!token) return null
 
     // Decrypt the JWE token
-    const { payload } = await jwtDecrypt(token, getSecretKey())
+    const { payload } = await jwtDecrypt(token, getSecretKey(), {
+      keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
+      contentEncryptionAlgorithms: ['A256GCM'],
+    })
 
     const session = payload as unknown as SessionData
 
@@ -120,7 +123,8 @@ export async function getSession(): Promise<SessionData | null> {
     }
 
     return session
-  } catch {
+  } catch (err) {
+    console.error('[Session Decrypt] Failed:', err)
     // Invalid/tampered/expired token → treat as unauthenticated
     return null
   }
