@@ -1,0 +1,184 @@
+// ──────────────────────────────────────────────────────────────
+// FeedList — tabs + infinite scroll for the home feed.
+//
+// Architecture:
+//   • "For You"  tab: all published posts — loaded server-side
+//     in the route loader (SSR), subsequent pages loaded client-side
+//   • "Following" tab: posts from followed users — client-side only
+//     (requires session, not SSR-prefetched)
+//
+// Infinite scroll uses IntersectionObserver on a sentinel <div>
+// at the bottom of the list. When it enters the viewport, the
+// next page is fetched via useInfiniteQuery.
+//
+// useInfiniteQuery (TanStack Query v5):
+//   • initialData    — populates the first page from the SSR loader,
+//     so no loading state on first render
+//   • getNextPageParam — extracts nextCursor from each page response
+//   • enabled        — prevents the "Following" query from running
+//     until that tab is selected and the user is authenticated
+// ──────────────────────────────────────────────────────────────
+
+import { useState } from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { cn } from '@/lib/utils/cn'
+import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll'
+import { PostCard } from './PostCard'
+import { FeedSkeleton, PostCardSkeleton } from './PostCardSkeleton'
+import {
+  getFeedFn,
+  getFollowingFeedFn,
+} from '@/server/actions/Database/services/feed.service'
+import type { FeedPage } from '@/lib/entities/feed.types'
+import type { SessionData } from '@/server/auth/session'
+
+type Tab = 'forYou' | 'following'
+
+interface FeedListProps {
+  session: SessionData | null
+  /** First page of "For You" feed pre-fetched in the SSR loader */
+  initialFeedPage?: FeedPage
+}
+
+export function FeedList({ session, initialFeedPage }: FeedListProps) {
+  const [activeTab, setActiveTab] = useState<Tab>('forYou')
+
+  // ── "For You" infinite query ────────────────────────────────
+  const forYouQuery = useInfiniteQuery({
+    queryKey: ['feed', 'forYou'],
+    queryFn: ({ pageParam }) =>
+      getFeedFn({ data: { cursor: pageParam as string | undefined, limit: 15 } }),
+    initialPageParam: undefined as string | undefined,
+    // Seed with the SSR loader data — no loading flash on first render
+    initialData: initialFeedPage
+      ? { pages: [initialFeedPage], pageParams: [undefined] }
+      : undefined,
+    staleTime: 30_000, // re-fetch after 30s in background
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+
+  // ── "Following" infinite query ──────────────────────────────
+  // Only starts fetching when the tab is selected AND user is logged in.
+  const followingQuery = useInfiniteQuery({
+    queryKey: ['feed', 'following', session?.userId],
+    queryFn: ({ pageParam }) =>
+      getFollowingFeedFn({ data: { cursor: pageParam as string | undefined, limit: 15 } }),
+    initialPageParam: undefined as string | undefined,
+    enabled: !!session && activeTab === 'following',
+    staleTime: 30_000,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+
+  const activeQuery = activeTab === 'forYou' ? forYouQuery : followingQuery
+  const posts = activeQuery.data?.pages.flatMap((p) => p.posts) ?? []
+
+  // ── Infinite scroll sentinel ────────────────────────────────
+  const { sentinelRef } = useInfiniteScroll({
+    onLoadMore: () => activeQuery.fetchNextPage(),
+    hasMore: !!activeQuery.hasNextPage,
+    isLoading: activeQuery.isFetchingNextPage,
+  })
+
+  return (
+    <div className="flex flex-col" style={{ background: 'var(--surface)' }}>
+      {/* ── Tab bar ─────────────────────────────────────────── */}
+      <div
+        className="sticky top-14 z-40 flex border-b"
+        style={{
+          background: 'var(--surface)',
+          borderColor: 'var(--border)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        {(['forYou', 'following'] as Tab[]).map((tab) => {
+          const isActive = activeTab === tab
+          const label = tab === 'forYou' ? 'For You' : 'Following'
+          const disabled = tab === 'following' && !session
+
+          return (
+            <button
+              key={tab}
+              onClick={() => !disabled && setActiveTab(tab)}
+              disabled={disabled}
+              className={cn(
+                'flex-1 py-3 text-sm font-semibold transition-colors relative',
+                disabled && 'opacity-40 cursor-not-allowed',
+              )}
+              style={{
+                color: isActive ? 'var(--accent)' : 'var(--text)',
+                borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+              }}
+              title={disabled ? 'Log in to see posts from people you follow' : undefined}
+            >
+              {label}
+              {/* Unread indicator dot — to be wired up in notifications phase */}
+              {tab === 'following' && session && followingQuery.data?.pages[0]?.posts.length === 0 && (
+                <span
+                  className="ml-1.5 w-1.5 h-1.5 rounded-full inline-block"
+                  style={{ background: 'var(--accent)' }}
+                />
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Post list ──────────────────────────────────────── */}
+      {activeQuery.isLoading ? (
+        <FeedSkeleton />
+      ) : (
+        <>
+          {posts.map((post) => (
+            <PostCard key={post.postId} post={post} />
+          ))}
+
+          {/* "Load more" skeleton card */}
+          {activeQuery.isFetchingNextPage && <PostCardSkeleton />}
+
+          {/* Sentinel div — triggers next page when visible */}
+          <div ref={sentinelRef} className="h-px" />
+
+          {/* End-of-feed message */}
+          {!activeQuery.hasNextPage && posts.length > 0 && (
+            <p
+              className="py-10 text-center text-sm"
+              style={{ color: 'var(--text-s)' }}
+            >
+              You're all caught up ✦
+            </p>
+          )}
+
+          {/* Empty state — Following tab, no follows yet */}
+          {activeTab === 'following' && session && posts.length === 0 && !activeQuery.isLoading && (
+            <div className="py-16 flex flex-col items-center gap-3 px-8 text-center">
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center text-2xl"
+                style={{ background: 'var(--accent-bg)' }}
+              >
+                ✦
+              </div>
+              <p className="font-semibold" style={{ color: 'var(--text-h)' }}>
+                Nothing here yet
+              </p>
+              <p className="text-sm" style={{ color: 'var(--text-s)' }}>
+                Follow some people to see their posts here.
+              </p>
+            </div>
+          )}
+
+          {/* Empty state — For You, no posts at all */}
+          {activeTab === 'forYou' && posts.length === 0 && !activeQuery.isLoading && (
+            <div className="py-16 flex flex-col items-center gap-3 px-8 text-center">
+              <p className="font-semibold" style={{ color: 'var(--text-h)' }}>
+                No posts yet
+              </p>
+              <p className="text-sm" style={{ color: 'var(--text-s)' }}>
+                Be the first to post something.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}

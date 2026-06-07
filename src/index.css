@@ -1,24 +1,57 @@
 @import "tailwindcss";
 
+/* ────────────────────────────────────────────────────────────
+   Design Tokens
+   ─────────────────────────────────────────────────────────────
+   Two distinct accent roles:
+   --brand   = amber  (#f59e0b) → logo, brand moments only
+   --accent  = purple (#aa3bff) → every interactive element
+               (like button active, tab indicator, focus rings,
+                CTA buttons, selection highlights)
+
+   Card vs page background split:
+   --bg      = page background (slightly tinted, not pure white)
+   --surface = card / panel surface (pure white or slightly lighter dark)
+
+   This separation prevents cards from "floating invisible" on
+   a pure-white page background.
+   ──────────────────────────────────────────────────────────── */
+
 :root {
-  --text: #6b6375;
+  /* Brand */
+  --brand:        #f59e0b;
+  --brand-dark:   #d97706;
+
+  /* Interactive accent — purple */
+  --accent:        #aa3bff;
+  --accent-hover:  #9333ea;
+  --accent-bg:     rgba(170, 59, 255, 0.08);
+  --accent-border: rgba(170, 59, 255, 0.28);
+
+  /* Text */
+  --text:   #6b6375;
   --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --text-s: #9ca3af;  /* subtle / placeholder */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Surfaces */
+  --bg:      #f5f4f1;   /* warm off-white page background */
+  --surface: #ffffff;   /* card / panel background */
+  --border:  #e5e4e7;
+  --border-strong: #d1d0d5;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
+  /* Utility */
+  --code-bg:   #f4f3ec;
+  --social-bg: rgba(244, 243, 236, 0.6);
+  --shadow-sm: 0 1px 3px 0 rgba(0,0,0,.06), 0 1px 2px -1px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px -2px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.04);
+
+  /* Typography */
+  --sans:    'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono:    ui-monospace, Consolas, monospace;
+
+  font: 15px/150% var(--sans);
+  letter-spacing: 0.1px;
   color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
@@ -26,25 +59,31 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
+    --brand:        #f59e0b;  /* amber unchanged — stays recognisable */
+    --brand-dark:   #fbbf24;
+
+    --accent:        #c084fc;  /* lighter purple on dark bg for contrast */
+    --accent-hover:  #a855f7;
+    --accent-bg:     rgba(192, 132, 252, 0.12);
+    --accent-border: rgba(192, 132, 252, 0.35);
+
+    --text:   #9ca3af;
     --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    --text-s: #6b7280;
+
+    --bg:      #16171d;
+    --surface: #1e1f28;
+    --border:  #2e303a;
+    --border-strong: #3e4050;
+
+    --code-bg:   #1f2028;
+    --social-bg: rgba(47, 48, 58, 0.6);
+    --shadow-sm: 0 1px 3px 0 rgba(0,0,0,.25), 0 1px 2px -1px rgba(0,0,0,.2);
+    --shadow-md: 0 4px 12px -2px rgba(0,0,0,.35), 0 2px 4px -2px rgba(0,0,0,.25);
   }
 
   #social .button-icon {
@@ -52,56 +91,43 @@
   }
 }
 
+/* ── Layout ─────────────────────────────────────────────────── */
 #root {
   width: 100%;
   margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  text-align: left;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-}
+body { margin: 0; }
 
-h1,
-h2 {
+/* ── Typography ─────────────────────────────────────────────── */
+h1, h2 {
   font-family: var(--heading);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-h);
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+  font-size: clamp(32px, 5vw, 52px);
+  letter-spacing: -1.5px;
+  line-height: 110%;
+  margin: 24px 0;
 }
 
 h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
+  font-size: clamp(18px, 3vw, 22px);
+  line-height: 120%;
+  letter-spacing: -0.3px;
   margin: 0 0 8px;
-
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
 }
 
-p {
-  margin: 0;
-}
+p { margin: 0; }
 
-code,
-.counter {
+code, .counter {
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
@@ -109,8 +135,32 @@ code,
 }
 
 code {
-  font-size: 15px;
+  font-size: 13px;
   line-height: 135%;
-  padding: 4px 8px;
+  padding: 3px 7px;
   background: var(--code-bg);
 }
+
+/* ── Skeleton animation ──────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--surface) 37%,
+    var(--border) 63%
+  );
+  background-size: 600px 100%;
+  animation: shimmer 1.4s infinite ease-in-out;
+  border-radius: 6px;
+}
+
+/* ── Scrollbar (Webkit) ─────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
