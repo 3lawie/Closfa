@@ -111,7 +111,9 @@ export async function getSession(): Promise<SessionData | null> {
 
     // Decrypt the JWE token
     const { payload } = await jwtDecrypt(token, getSecretKey(), {
+      // alg: PBES2 key-wrapping algorithm uses a random cryptographic Salt per token to secure the secret key derivation
       keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
+      // enc: AES-256-GCM content cipher uses a unique random IV (Initialization Vector) per encryption and computes a verification tag to detect tampering
       contentEncryptionAlgorithms: ['A256GCM'],
     })
 
@@ -138,7 +140,9 @@ export async function createSession(data: Omit<SessionData, 'expiresAt'>): Promi
 
   const sessionData: SessionData = { ...data, expiresAt }
 
-  // Encrypt with jose — PBES2-HS256+A128KW key wrap + A256GCM content encryption
+  // Encrypt with jose:
+  // - PBES2-HS256+A128KW: Derives a wrapping key from our SESSION_SECRET using a freshly generated random Salt.
+  // - A256GCM: Encrypts the payload with AES-256-GCM, generating a unique Initialization Vector (IV) and a message integrity tag.
   const token = await new EncryptJWT(sessionData as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
     .setIssuedAt()

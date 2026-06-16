@@ -12,8 +12,8 @@
 //   if (perm.authorized && perm.canDeleteComment) { ... }
 // ──────────────────────────────────────────────────────────────
 
-import { db } from '../../../db'
-import { schema } from '../../../db/schema'
+import { db } from '@/server/db'
+import { schema } from '@/server/db/schema'
 
 const ROLE_LEVELS = {
   moderator: 1,
