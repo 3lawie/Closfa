@@ -2,6 +2,6 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "closfa",
   "compatibility_date": "2026-06-04",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
   "main": "@tanstack/react-start/server-entry"
 }
