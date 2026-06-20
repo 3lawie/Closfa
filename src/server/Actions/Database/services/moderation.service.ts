@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { authMiddleware } from '@/server/auth/middleware'
+import { authMiddleware } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { getProfilePermission } from '../verifiers/permissions'

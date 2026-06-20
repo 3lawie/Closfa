@@ -14,19 +14,19 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createFileRoute } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/auth/sessionFn'
+import { getSessionFn } from '@/server/lib/sessionFn'
 import { getFeedFn } from "../server/actions/Database/services/feed.service"
 import { Navbar } from '@/components/layout/Navbar'
 import { FeedList } from '@/components/feed/FeedList'
 
 export const Route = createFileRoute('/')(({
   loader: async () => {
-    const [session, firstPage] = await Promise.all([
+    const [result, firstPage] = await Promise.all([
       getSessionFn(),
       // Pre-fetch first page of the public "For You" feed
       getFeedFn({ data: { limit: 15 } }).catch(() => null),
     ])
-    return { session, firstPage }
+    return { session: result.session, firstPage }
   },
   component: HomePage,
 }))

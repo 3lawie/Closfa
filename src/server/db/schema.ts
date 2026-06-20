@@ -79,7 +79,7 @@ export const media = pgTable("media", {
 export const user = pgTable("user", {
     userId: varchar("user_id").primaryKey().$defaultFn(() => createId()),
     name: text("name").notNull(),
-    nickname: text("nickname").notNull().unique(),
+    nickname: text("nickname").unique(),
     email: text("email").notNull().unique(),
     authProviderId: text("auth_provider_id").notNull(),
     authProvider: text("auth_provider").notNull().default("email"),
@@ -276,10 +276,26 @@ export const notification = pgTable("notification", {
     notificationUserIndex: index("notification_user_idx").on(table.userId, table.read),
 }))
 
+export const subscriptionStatusEnum = pgEnum("subscription_status", [
+    "active", "canceled", "past_due", "unpaid"
+])
+
+export const subscription = pgTable("subscription", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    stripeCustomerId: varchar("stripe_customer_id"),
+    stripeSubscriptionId: varchar("stripe_subscription_id"),
+    status: subscriptionStatusEnum("status").notNull().default("active"),
+    planId: varchar("plan_id"),
+    currentPeriodEnd: timestamp("current_period_end"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+})
+
 export const schema = {
     user, follow, profile,
     categories, post, postToCategory,
     comment, commentReply,
     media, postToUser, postToMedia,
-    profileMember, report, auditLog, notification
+    profileMember, report, auditLog, notification, subscription
 };

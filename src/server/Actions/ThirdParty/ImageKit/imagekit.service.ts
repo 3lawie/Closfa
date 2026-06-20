@@ -16,7 +16,7 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import crypto from 'crypto'
-import { verifyImageKitUpload, type FileMetadata } from "../verifiers/imagekit.verify"
+import { verifyImageKitUpload, type FileMetadata } from './imagekit.verify'
 
 type AuthResult = {
   token: string

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { getAuth0LogoutUrl } from '@/server/auth/auth0'
-import { destroySession } from '@/server/auth/session'
+import { getAuth0LogoutUrl } from '@/server/actions/ThirdParty/OAuth/auth0'
+import { destroySession } from '@/server/lib/session'
 
 export const Route = createFileRoute('/api/auth/logout')({
   server: {

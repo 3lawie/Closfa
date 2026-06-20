@@ -56,8 +56,14 @@ export type SessionData = {
   sub: string      // Auth0 subject identifier (auth_provider_id)
   email: string
   name: string
-  nickname: string
+  nickname: string | null
+  issuedAt: number // Unix timestamp
   expiresAt: number // Unix timestamp
+}
+
+export type SessionResult = {
+  session: SessionData | null
+  status: 'valid' | 'renewed' | 'expired' | 'unauthorized'
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -90,13 +96,13 @@ function getSecretKey(): Uint8Array {
  * Read and decrypt the session from the request cookie.
  * Returns null if cookie is absent or token is invalid/expired.
  */
-export async function getSession(): Promise<SessionData | null> {
+export async function getSession(): Promise<SessionResult> {
   try {
     const request = getRequest()
-    if (!request) return null
+    if (!request) return { session: null, status: 'unauthorized' }
 
     const cookieHeader = request.headers.get('cookie')
-    if (!cookieHeader) return null
+    if (!cookieHeader) return { session: null, status: 'unauthorized' }
 
     // Parse cookies manually — no cookie-parser dependency needed
     const cookies = Object.fromEntries(
@@ -107,7 +113,7 @@ export async function getSession(): Promise<SessionData | null> {
     )
 
     const token = cookies[COOKIE_NAME]
-    if (!token) return null
+    if (!token) return { session: null, status: 'unauthorized' }
 
     // Decrypt the JWE token
     const { payload } = await jwtDecrypt(token, getSecretKey(), {
@@ -118,27 +124,44 @@ export async function getSession(): Promise<SessionData | null> {
     })
 
     const session = payload as unknown as SessionData
+    const now = Math.floor(Date.now() / 1000)
 
-    // Check expiry (belt-and-suspenders — jose also validates exp claim)
-    if (session.expiresAt < Math.floor(Date.now() / 1000)) {
-      return null
+    // Absolute cap: 30 days
+    if (now - session.issuedAt > 30 * 24 * 60 * 60) {
+      return { session: null, status: 'expired' }
     }
 
-    return session
+    if (session.expiresAt < now) {
+      return { session: null, status: 'expired' }
+    }
+
+    // Sliding window renewal logic
+    const timeRemaining = session.expiresAt - now
+    const threshold = SESSION_DURATION_SECONDS * 0.25
+
+    if (timeRemaining < threshold) {
+      // renew session silently
+      await createSession(session, session.issuedAt)
+      return { session, status: 'renewed' }
+    }
+
+    return { session, status: 'valid' }
   } catch (err) {
     console.error('[Session Decrypt] Failed:', err)
     // Invalid/tampered/expired token → treat as unauthenticated
-    return null
+    return { session: null, status: 'unauthorized' }
   }
 }
 
 /**
  * Encrypt the session data and set it as an HttpOnly cookie on the response.
  */
-export async function createSession(data: Omit<SessionData, 'expiresAt'>): Promise<void> {
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_DURATION_SECONDS
+export async function createSession(data: Omit<SessionData, 'expiresAt' | 'issuedAt'>, existingIssuedAt?: number): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  const expiresAt = now + SESSION_DURATION_SECONDS
+  const issuedAt = existingIssuedAt ?? now
 
-  const sessionData: SessionData = { ...data, expiresAt }
+  const sessionData: SessionData = { ...data, expiresAt, issuedAt }
 
   // Encrypt with jose:
   // - PBES2-HS256+A128KW: Derives a wrapping key from our SESSION_SECRET using a freshly generated random Salt.

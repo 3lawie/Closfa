@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { cn } from '@/lib/utils/cn'
-import type { SessionData } from '@/server/auth/session'
+import type { SessionData } from '@/server/lib/session'
 
 // ──────────────────────────────────────────────────────────────
 // LoginButton — navigates to the server-side Auth0 login flow

@@ -8,9 +8,9 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createServerFn } from '@tanstack/react-start'
-import { getUserInfo, type Auth0UserInfo } from '@/server/auth/auth0'
-import { getSession } from '@/server/auth/session'
-import { verifyUserInfo } from '../verifiers/auth0.verify'
+import { getUserInfo, type Auth0UserInfo } from '@/server/actions/ThirdParty/OAuth/auth0'
+import { getSession } from '@/server/lib/session'
+import { verifyUserInfo } from './auth0.verify'
 
 /**
  * Get the Auth0 user info for the currently logged-in user.

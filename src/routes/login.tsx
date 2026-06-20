@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/auth/sessionFn'
+import { getSessionFn } from '@/server/lib/sessionFn'
 import { LoginButton } from '@/components/auth'
 
 // If already logged in, redirect to home

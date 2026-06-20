@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { getAuth0LoginUrl } from '@/server/auth/auth0'
+import { getAuth0LoginUrl } from '@/server/actions/ThirdParty/OAuth/auth0'
 
 export const Route = createFileRoute('/api/auth/login')({
   server: {

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import type { SessionData } from '@/server/auth/session'
+import type { SessionData } from '@/server/lib/session'
 
 export function Navbar({ session }: { session: SessionData | null }) {
   return (

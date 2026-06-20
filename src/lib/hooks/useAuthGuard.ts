@@ -9,7 +9,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { useRouteContext } from '@tanstack/react-router'
-import type { SessionData } from '@/server/auth/session'
+import type { SessionData } from '@/server/lib/session'
 
 /**
  * Access the session from within any _authenticated route.

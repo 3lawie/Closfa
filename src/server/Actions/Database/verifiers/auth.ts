@@ -6,7 +6,7 @@
 // additional authorization checks (ownership, etc.)
 // ──────────────────────────────────────────────────────────────
 
-import { type SessionData } from '@/server/auth/session'
+import { type SessionData } from '@/server/lib/session'
 
 /** Verify the session exists and has a userId */
 export function verifyIsLoggedIn(session: SessionData | null) {

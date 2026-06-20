@@ -30,7 +30,7 @@ import {
   getFollowingFeedFn,
 } from '@/server/actions/Database/services/feed.service'
 import type { FeedPage } from '@/lib/entities/feed.types'
-import type { SessionData } from '@/server/auth/session'
+import type { SessionData } from '@/server/lib/session'
 
 type Tab = 'forYou' | 'following'
 
