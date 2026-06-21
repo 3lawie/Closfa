@@ -3,7 +3,6 @@ import { authMiddleware } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { verifyIsOwner } from '../verifiers/auth'
 import { createId } from '@paralleldrive/cuid2'
 
 export async function upsertAuthUser(userInfo: {
