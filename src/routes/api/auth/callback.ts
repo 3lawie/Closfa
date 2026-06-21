@@ -38,7 +38,7 @@ export const Route = createFileRoute('/api/auth/callback')({
 
           // ── Step 3: Upsert user in DB ──
           let user = await db.query.user.findFirst({
-            where: { authProviderId: userInfo.sub },
+            where: (users, { eq }) => eq(users.authProviderId, userInfo.sub),
           })
 
           if (!user) {
