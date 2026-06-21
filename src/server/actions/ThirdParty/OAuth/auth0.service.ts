@@ -11,9 +11,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { exchangeCodeForToken, getUserInfo, type Auth0UserInfo } from '@/server/actions/ThirdParty/OAuth/auth0'
 import { getSession, createSession } from '@/server/lib/session'
 import { verifyUserInfo } from './auth0.verify'
-import { db } from '@/server/db'
-import { schema } from '@/server/db/schema'
-import { createId } from '@paralleldrive/cuid2'
+import { upsertAuthUser } from '@/server/actions/Database/services/user.service'
 
 export async function processAuthCallback(code: string, state: string) {
   // ── Step 1: Exchange authorization code for tokens (server-to-server) ──
@@ -25,35 +23,7 @@ export async function processAuthCallback(code: string, state: string) {
   const userInfo = validateAndNormalizeUserInfo(rawUserInfo as unknown as Record<string, unknown>)
 
   // ── Step 3: Upsert user in DB ──
-  let user = await db.query.user.findFirst({
-    where: { authProviderId: userInfo.sub },
-  })
-
-  if (!user) {
-    // First login — create the user record
-    const userId = createId()
-
-    await db.insert(schema.user).values({
-      userId,
-      name: userInfo.name,
-      nickname: null, // Must be claimed during onboarding
-      email: userInfo.email,
-      authProviderId: userInfo.sub,
-      authProvider: userInfo.authProvider,
-      emailVerified: userInfo.email_verified ?? false,
-    })
-
-    // Create the user's profile record (one-to-one with user)
-    await db.insert(schema.profile).values({
-      profile_id: createId(),
-      userId,
-      isVerified: false,
-    })
-
-    user = { userId, authProviderId: userInfo.sub, nickname: null } as any
-  }
-
-  const finalUser = user!
+  const finalUser = await upsertAuthUser(userInfo)
   const needsOnboarding = !finalUser.nickname;
 
   // ── Step 4: Create encrypted session cookie ──
