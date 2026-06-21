@@ -13,9 +13,7 @@ export async function upsertAuthUser(userInfo: {
   authProvider: string;
   email_verified?: boolean;
 }) {
-  let user = await db.query.user.findFirst({
-    where: { authProviderId: userInfo.sub },
-  })
+  let [user] = await db.select().from(schema.user).where(eq(schema.user.authProviderId, userInfo.sub)).limit(1)
 
   if (!user) {
     const userId = createId()
