@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { queries } from '@/server/queries'
 import { authMiddleware } from '@/server/lib/middleware'
-import type { FeedPage } from '@/lib/entities/feed.types'
+import type { FeedPage } from '@/lib/entities/Post'
 
 const FEED_LIMIT = 15
 

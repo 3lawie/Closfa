@@ -14,12 +14,13 @@ export const followUser = createServerFn({ method: 'POST' })
       throw new Error("You cannot follow yourself")
     }
 
-    const existingFollow = await db.query.follow.findFirst({
-      where: {
-        followerId: userId,
-        followedId: targetUserId,
-      }
-    })
+    const [existingFollow] = await db.select()
+      .from(schema.follow)
+      .where(and(
+        eq(schema.follow.followerId, userId),
+        eq(schema.follow.followedId, targetUserId)
+      ))
+      .limit(1)
 
     if (existingFollow) {
       return { success: true, message: "Already following" }

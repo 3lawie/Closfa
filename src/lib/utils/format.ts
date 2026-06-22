@@ -36,7 +36,7 @@ export function formatCount(n: number | null | undefined): string {
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return ''
   const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString('en-UK', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /** Format file size in human-readable form: 1024 → "1.0 KB" */
@@ -44,8 +44,8 @@ export function formatFileSize(bytes: number | null | undefined): string {
   if (!bytes) return '0 B'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(3)} GB`
 }
 
 /** Format video/audio duration in seconds to MM:SS or H:MM:SS */
@@ -56,4 +56,14 @@ export function formatDuration(seconds: number | null | undefined): string {
   const s = Math.floor(seconds % 60)
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+
+export function computeResolution(width: number, height: number): 'SD' | 'HD' | 'FHD' | 'QHD' | 'UHD' {
+  const shorter = Math.min(width, height)
+  if (shorter >= 2160) return 'UHD'
+  if (shorter >= 1440) return 'QHD'
+  if (shorter >= 1080) return 'FHD'
+  if (shorter >= 720) return 'HD'
+  return 'SD'
 }

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils/cn'
 import { formatRelativeTime, formatCount } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
-import type { FeedPost, FeedPostMedia, FeedPostAuthor } from '@/lib/entities/feed.types'
+import type { FeedPost, FeedPostMedia, FeedPostAuthor } from '@/lib/entities/Post'
 
 // ── Icons ────────────────────────────────────────────────────
 function IconHeart({ filled }: { filled: boolean }) {
@@ -160,7 +160,7 @@ export function PostCard({ post }: { post: FeedPost }) {
 
   function handleLike() {
     if (liked) { setLiked(false); setLocalLikes((n: number) => Math.max(0, n - 1)) }
-    else        { setLiked(true);  setLocalLikes((n: number) => n + 1) }
+    else { setLiked(true); setLocalLikes((n: number) => n + 1) }
   }
 
   return (

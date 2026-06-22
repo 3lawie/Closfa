@@ -58,7 +58,7 @@ export const updateProfile = createServerFn({ method: 'POST' })
         bio: profileData.bio,
         website: profileData.website,
         location: profileData.location,
-        image: profileData.image, // mediaId
+        avatar: profileData.image, // mediaId
         updatedAt: new Date(),
       })
       .where(eq(schema.profile.userId, userId))

@@ -27,6 +27,31 @@
 // ──────────────────────────────────────────────────────────────
 
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { z } from 'zod'
+
+// ──────────────────────────────────────────────────────────────
+// Zod Schemas & Types
+// ──────────────────────────────────────────────────────────────
+
+export const TokenResponseSchema = z.object({
+  access_token: z.string(),
+  id_token: z.string().optional(),
+  expires_in: z.number(),
+  token_type: z.string(),
+})
+
+export type TokenResponse = z.infer<typeof TokenResponseSchema>
+
+export const Auth0UserInfoSchema = z.object({
+  sub: z.string(),            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
+  name: z.string(),           // Full name
+  nickname: z.string(),       // Username/handle (usually email local part)
+  email: z.string(),
+  email_verified: z.boolean(),
+  picture: z.string().optional(), // Profile picture URL from the identity provider
+})
+
+export type Auth0UserInfo = z.infer<typeof Auth0UserInfoSchema>
 
 // ──────────────────────────────────────────────────────────────
 // PKCE Helpers
@@ -159,13 +184,7 @@ export async function getAuth0LoginUrl(): Promise<string> {
   return `https://${domain}/authorize?${params.toString()}`
 }
 
-/** Token response shape from Auth0 /oauth/token */
-type TokenResponse = {
-  access_token: string
-  id_token?: string
-  expires_in: number
-  token_type: string
-}
+// (TokenResponseSchema defined at the top of the file)
 
 /**
  * Exchange the authorization code for tokens.
@@ -208,18 +227,11 @@ export async function exchangeCodeForToken(
     throw new Error(`Auth0 token exchange failed: ${error}`)
   }
 
-  return response.json() as Promise<TokenResponse>
+  const data = await response.json()
+  return TokenResponseSchema.parse(data)
 }
 
-/** User info shape from Auth0 /userinfo */
-export type Auth0UserInfo = {
-  sub: string            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
-  name: string           // Full name
-  nickname: string       // Username/handle (usually email local part)
-  email: string
-  email_verified: boolean
-  picture?: string       // Profile picture URL from the identity provider
-}
+// (Auth0UserInfoSchema defined at the top of the file)
 
 /**
  * Fetch the authenticated user's profile from Auth0.
@@ -236,7 +248,8 @@ export async function getUserInfo(accessToken: string): Promise<Auth0UserInfo> {
     throw new Error(`Failed to fetch Auth0 user info: ${response.status}`)
   }
 
-  return response.json() as Promise<Auth0UserInfo>
+  const data = await response.json()
+  return Auth0UserInfoSchema.parse(data)
 }
 
 /**

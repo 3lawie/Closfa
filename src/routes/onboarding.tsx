@@ -33,9 +33,14 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
       }, session.issuedAt)
 
       return { ok: true }
-    } catch (e) {
-      // In a real app we'd check Postgres constraint errors for uniqueness
-      throw new Error('Nickname is already taken or invalid')
+    } catch (e: any) {
+      // Postgres Unique Violation code is '23505'
+      // You named the constraint 'name is already taken', so we can check e.constraint
+      if (e.code === '23505' || e.constraint === 'name is already taken') {
+        throw new Error('This nickname is already taken by another user.')
+      }
+      console.error(e)
+      throw new Error('An error occurred while claiming your nickname.')
     }
   })
 

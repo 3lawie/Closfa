@@ -112,7 +112,7 @@ export const profile = pgTable("profile", {
     bio: text("bio"),
     website: text("website"),
     location: text("location"),
-    image: varchar("image").references(() => media.media_id),
+    avatar: varchar("image").references(() => media.media_id),
     isVerified: boolean("is_verified").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
