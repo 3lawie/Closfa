@@ -8,9 +8,8 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createServerFn } from '@tanstack/react-start'
-import { exchangeCodeForToken, getUserInfo, type Auth0UserInfo } from '@/server/actions/ThirdParty/OAuth/auth0'
+import { exchangeCodeForToken, getUserInfo, type UserInfoFromToken } from '@/server/actions/ThirdParty/OAuth/auth0'
 import { getSession, createSession } from '@/server/lib/session'
-import { verifyUserInfo } from './auth0.verify'
 import { upsertAuthUser } from '@/server/actions/Database/services/user.service'
 
 export async function processAuthCallback(code: string, state: string) {
@@ -19,8 +18,9 @@ export async function processAuthCallback(code: string, state: string) {
   const tokens = await exchangeCodeForToken(code, state)
 
   // ── Step 2: Fetch user profile from Auth0 (server-to-server) ──
+  // getUserInfo already runs Zod validation and throws if data is bad!
   const rawUserInfo = await getUserInfo(tokens.access_token)
-  const userInfo = validateAndNormalizeUserInfo(rawUserInfo as unknown as Record<string, unknown>)
+  const userInfo = validateAndNormalizeUserInfo(rawUserInfo)
 
   // ── Step 3: Upsert user in DB ──
   const finalUser = await upsertAuthUser(userInfo)
@@ -49,7 +49,7 @@ export async function processAuthCallback(code: string, state: string) {
  * (e.g., after a social profile update).
  */
 export const getAuth0UserInfo = createServerFn({ method: 'GET' })
-  .handler(async (): Promise<Auth0UserInfo | null> => {
+  .handler(async (): Promise<UserInfoFromToken | null> => {
     const session = await getSession()
     if (!session) return null
 
@@ -59,18 +59,7 @@ export const getAuth0UserInfo = createServerFn({ method: 'GET' })
     return null
   })
 
-/**
- * Validate that a user info object from Auth0 has the required fields.
- * Used during the callback flow as an extra safety check.
- */
-export function validateAndNormalizeUserInfo(rawUserInfo: Record<string, unknown>) {
-  const check = verifyUserInfo(rawUserInfo)
-  if (!check.ok) {
-    throw new Error(check.message)
-  }
-
-  const userInfo = rawUserInfo as Auth0UserInfo
-
+export function validateAndNormalizeUserInfo(userInfo: UserInfoFromToken) {
   // Normalize nickname: sanitize to safe chars, max 30
   const rawNickname = userInfo.nickname || userInfo.email.split('@')[0]
   const nickname = rawNickname.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)

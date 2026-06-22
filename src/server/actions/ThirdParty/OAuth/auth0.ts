@@ -46,12 +46,12 @@ export const Auth0UserInfoSchema = z.object({
   sub: z.string(),            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
   name: z.string(),           // Full name
   nickname: z.string(),       // Username/handle (usually email local part)
-  email: z.string(),
+  email: z.string().email(),
   email_verified: z.boolean(),
   picture: z.string().optional(), // Profile picture URL from the identity provider
 })
 
-export type Auth0UserInfo = z.infer<typeof Auth0UserInfoSchema>
+export type UserInfoFromToken = z.infer<typeof Auth0UserInfoSchema>
 
 // ──────────────────────────────────────────────────────────────
 // PKCE Helpers
@@ -237,7 +237,7 @@ export async function exchangeCodeForToken(
  * Fetch the authenticated user's profile from Auth0.
  * Uses the access_token — this call is server-to-server.
  */
-export async function getUserInfo(accessToken: string): Promise<Auth0UserInfo> {
+export async function getUserInfo(accessToken: string): Promise<UserInfoFromToken> {
   const { domain } = getAuth0Config()
 
   const response = await fetch(`https://${domain}/userinfo`, {
