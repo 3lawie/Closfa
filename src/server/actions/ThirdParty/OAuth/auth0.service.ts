@@ -8,7 +8,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createServerFn } from '@tanstack/react-start'
-import { exchangeCodeForToken, getUserInfo, type UserInfoFromToken } from '@/server/actions/ThirdParty/OAuth/auth0'
+import { exchangeCodeForToken, getUserInfo, type UserInfoFromToken, validateAndNormalizeUserInfo } from '@/server/actions/ThirdParty/OAuth/auth0'
 import { getSession, createSession } from '@/server/lib/session'
 import { upsertAuthUser } from '@/server/actions/Database/services/user.service'
 
@@ -28,11 +28,16 @@ export async function processAuthCallback(code: string, state: string) {
 
   // ── Step 4: Create encrypted session cookie ──
   await createSession({
-    userId: finalUser.userId,
-    sub: userInfo.sub,
-    email: userInfo.email,
-    name: userInfo.name,
-    nickname: finalUser.nickname,
+    data: {
+      sessionData: {
+        userId: finalUser.userId,
+        sub: userInfo.sub,
+        email: userInfo.email,
+        name: userInfo.name,
+        nickname: finalUser.nickname,
+      },
+      // Optional: add existingIssuedAt here if needed
+    }
   })
 
   // ── Step 5: Return redirect URL ──
@@ -59,14 +64,4 @@ export const getAuth0UserInfo = createServerFn({ method: 'GET' })
     return null
   })
 
-export function validateAndNormalizeUserInfo(userInfo: UserInfoFromToken) {
-  // Normalize nickname: sanitize to safe chars, max 30
-  const rawNickname = userInfo.nickname || userInfo.email.split('@')[0]
-  const nickname = rawNickname.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)
 
-  // Derive auth provider name from Auth0 sub prefix
-  // e.g. "auth0|abc" → "auth0", "google-oauth2|abc" → "google-oauth2"
-  const authProvider = userInfo.sub.split('|')[0] || 'auth0'
-
-  return { ...userInfo, nickname, authProvider }
-}

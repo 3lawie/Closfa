@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/lib/sessionFn'
+import { getSession } from '@/server/lib/session'
 import { createServerFn } from '@tanstack/react-start'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
@@ -25,12 +25,11 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
         .where(eq(schema.user.userId, session.userId))
 
       await createSession({
-        userId: session.userId,
-        sub: session.sub,
-        email: session.email,
-        name: session.name,
-        nickname: cleanNickname,
-      }, session.issuedAt)
+        data: {
+          sessionData: session,
+          existingIssuedAt: session.issuedAt
+        }
+      })
 
       return { ok: true }
     } catch (e: any) {
@@ -46,7 +45,7 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
 
 export const Route = createFileRoute('/onboarding')({
   beforeLoad: async () => {
-    const result = await getSessionFn()
+    const result = await getSession()
     if (!result.session || result.status === 'expired' || result.status === 'unauthorized') {
       throw redirect({ href: '/api/auth/login' })
     }

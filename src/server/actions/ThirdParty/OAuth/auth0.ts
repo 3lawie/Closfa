@@ -33,25 +33,25 @@ import { z } from 'zod'
 // Zod Schemas & Types
 // ──────────────────────────────────────────────────────────────
 
-export const TokenResponseSchema = z.object({
-  access_token: z.string(),
+export const TokenResponse = z.object({
+  access_token: z.string("access_token is required"),
   id_token: z.string().optional(),
-  expires_in: z.number(),
-  token_type: z.string(),
+  expires_in: z.number("expire date is required"),
+  token_type: z.string("token type is required"),
 })
 
-export type TokenResponse = z.infer<typeof TokenResponseSchema>
+export type TokenResponse = z.infer<typeof TokenResponse>
 
-export const Auth0UserInfoSchema = z.object({
-  sub: z.string(),            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
-  name: z.string(),           // Full name
-  nickname: z.string(),       // Username/handle (usually email local part)
-  email: z.string().email(),
-  email_verified: z.boolean(),
+export const Auth0UserInfo = z.object({
+  sub: z.string("unique user id is required"),            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
+  name: z.string("name is required"),           // Full name
+  nickname: z.string("nickname is required from user account"),       // Username/handle (usually email local part)
+  email: z.string("email is required").email("email is invalid"),
+  email_verified: z.boolean("email_verified is required"),
   picture: z.string().optional(), // Profile picture URL from the identity provider
 })
 
-export type UserInfoFromToken = z.infer<typeof Auth0UserInfoSchema>
+export type UserInfoFromToken = z.infer<typeof Auth0UserInfo>
 
 // ──────────────────────────────────────────────────────────────
 // PKCE Helpers
@@ -228,7 +228,7 @@ export async function exchangeCodeForToken(
   }
 
   const data = await response.json()
-  return TokenResponseSchema.parse(data)
+  return TokenResponse.parse(data)
 }
 
 // (Auth0UserInfoSchema defined at the top of the file)
@@ -249,7 +249,7 @@ export async function getUserInfo(accessToken: string): Promise<UserInfoFromToke
   }
 
   const data = await response.json()
-  return Auth0UserInfoSchema.parse(data)
+  return Auth0UserInfo.parse(data)
 }
 
 /**
@@ -267,4 +267,16 @@ export function getAuth0LogoutUrl(): string {
   })
 
   return `https://${domain}/v2/logout?${params.toString()}`
+}
+
+export function validateAndNormalizeUserInfo(userInfo: UserInfoFromToken) {
+  // Normalize nickname: sanitize to safe chars, max 30
+  const rawNickname = userInfo.nickname || userInfo.email.split('@')[0]
+  const nickname = rawNickname.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)
+
+  // Derive auth provider name from Auth0 sub prefix
+  // e.g. "auth0|abc" → "auth0", "google-oauth2|abc" → "google-oauth2"
+  const authProvider = userInfo.sub.split('|')[0] || 'auth0'
+
+  return { ...userInfo, nickname, authProvider }
 }

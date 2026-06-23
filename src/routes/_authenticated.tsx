@@ -1,10 +1,10 @@
 import { createFileRoute, redirect, Outlet } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/lib/sessionFn'
+import { getSession } from '@/server/lib/session'
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async () => {
     // We check the session on the server side
-    const result = await getSessionFn()
+    const result = await getSession()
 
     if (!result.session || result.status === 'expired' || result.status === 'unauthorized') {
       throw redirect({ href: '/api/auth/login' })

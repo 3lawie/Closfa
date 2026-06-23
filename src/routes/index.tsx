@@ -14,7 +14,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createFileRoute } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/lib/sessionFn'
+import { getSession } from '@/server/lib/session'
 import { getFeedFn } from "../server/actions/Database/services/feed.service"
 import { Navbar } from '@/components/layout/Navbar'
 import { FeedList } from '@/components/feed/FeedList'
@@ -22,7 +22,7 @@ import { FeedList } from '@/components/feed/FeedList'
 export const Route = createFileRoute('/')(({
   loader: async () => {
     const [result, firstPage] = await Promise.all([
-      getSessionFn(),
+      getSession(),
       // Pre-fetch first page of the public "For You" feed
       getFeedFn({ data: { limit: 15 } }).catch(() => null),
     ])

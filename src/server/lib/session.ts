@@ -49,23 +49,28 @@
 
 import { EncryptJWT, jwtDecrypt } from 'jose'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 /** What we store inside the session cookie */
-export type SessionData = {
-  userId: string
-  sub: string      // Auth0 subject identifier (auth_provider_id)
-  email: string
-  name: string
-  nickname: string | null
-  issuedAt: number // Unix timestamp
-  expiresAt: number // Unix timestamp
-}
+export const SessionData = z.object({
+  userId: z.string(),
+  sub: z.string(),      // Auth0 subject identifier (auth_provider_id)
+  email: z.string().email(),
+  name: z.string(),
+  nickname: z.string().nullable(),
+  issuedAt: z.number(), // Unix timestamp
+  expiresAt: z.number(), // Unix timestamp
+})
+export type SessionData = z.infer<typeof SessionData>
 
-export type SessionResult = {
-  session: SessionData | null
-  status: 'valid' | 'renewed' | 'expired' | 'unauthorized'
-}
 
+export const SessionResult = z.object({
+  session: SessionData.nullable(),
+  status: z.enum(["valid", 'renewed', 'expired', 'unauthorized'])
+})
+
+export type SessionResult = z.infer<typeof SessionResult>
 // ──────────────────────────────────────────────────────────────
 // Cookie + crypto settings
 // ──────────────────────────────────────────────────────────────
@@ -96,85 +101,112 @@ function getSecretKey(): Uint8Array {
  * Read and decrypt the session from the request cookie.
  * Returns null if cookie is absent or token is invalid/expired.
  */
-export async function getSession(): Promise<SessionResult> {
-  try {
-    const request = getRequest()
-    if (!request) return { session: null, status: 'unauthorized' }
+export const getSession = createServerFn({ method: "GET" })
+  .handler(async (): Promise<SessionResult> => {
+    try {
+      const request = getRequest()
+      if (!request) return { session: null, status: 'unauthorized' }
 
-    const cookieHeader = request.headers.get('cookie')
-    if (!cookieHeader) return { session: null, status: 'unauthorized' }
+      const cookieHeader = request.headers.get('cookie')
+      if (!cookieHeader) return { session: null, status: 'unauthorized' }
 
-    // Parse cookies manually — no cookie-parser dependency needed
-    const cookies = Object.fromEntries(
-      cookieHeader.split(';').map((c: string) => {
-        const [k, ...v] = c.trim().split('=')
-        return [k.trim(), decodeURIComponent(v.join('='))]
+      // Parse cookies manually — no cookie-parser dependency needed
+      const cookies = Object.fromEntries(
+        cookieHeader.split(';').map((c: string) => {
+          const [k, ...v] = c.trim().split('=')
+          return [k.trim(), decodeURIComponent(v.join('='))]
+        })
+      )
+
+      const token = cookies[COOKIE_NAME]
+      if (!token) return { session: null, status: 'unauthorized' }
+
+      // Decrypt the JWE token
+      const { payload } = await jwtDecrypt(token, getSecretKey, {
+        // alg: PBES2 key-wrapping algorithm uses a random cryptographic Salt per token to secure the secret key derivation
+        keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
+        // enc: AES-256-GCM content cipher uses a unique random IV (Initialization Vector) per encryption and computes a verification tag to detect tampering
+        contentEncryptionAlgorithms: ['A256GCM'],
       })
-    )
 
-    const token = cookies[COOKIE_NAME]
-    if (!token) return { session: null, status: 'unauthorized' }
+      const session = payload as unknown as SessionData
+      const now = Math.floor(Date.now() / 1000)
 
-    // Decrypt the JWE token
-    const { payload } = await jwtDecrypt(token, getSecretKey(), {
-      // alg: PBES2 key-wrapping algorithm uses a random cryptographic Salt per token to secure the secret key derivation
-      keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
-      // enc: AES-256-GCM content cipher uses a unique random IV (Initialization Vector) per encryption and computes a verification tag to detect tampering
-      contentEncryptionAlgorithms: ['A256GCM'],
-    })
+      // Absolute cap: 30 days
+      if (now - session.issuedAt > 30 * 24 * 60 * 60) {
+        return { session: null, status: 'expired' }
+      }
 
-    const session = payload as unknown as SessionData
-    const now = Math.floor(Date.now() / 1000)
+      if (session.expiresAt < now) {
+        return { session: null, status: 'expired' }
+      }
 
-    // Absolute cap: 30 days
-    if (now - session.issuedAt > 30 * 24 * 60 * 60) {
-      return { session: null, status: 'expired' }
+      // Sliding window renewal logic
+      const timeRemaining = session.expiresAt - now
+      const threshold = SESSION_DURATION_SECONDS * 0.25
+
+      if (timeRemaining < threshold) {
+        // renew session silently
+        await createSession({
+          data: {
+            sessionData: session,
+            existingIssuedAt: session.issuedAt
+          }
+        })
+
+        return { session, status: 'renewed' }
+      }
+
+      return { session, status: 'valid' }
+    } catch (err) {
+      console.error('[Session Decrypt] Failed:', err)
+      // Invalid/tampered/expired token → treat as unauthenticated
+      return { session: null, status: 'unauthorized' }
     }
-
-    if (session.expiresAt < now) {
-      return { session: null, status: 'expired' }
-    }
-
-    // Sliding window renewal logic
-    const timeRemaining = session.expiresAt - now
-    const threshold = SESSION_DURATION_SECONDS * 0.25
-
-    if (timeRemaining < threshold) {
-      // renew session silently
-      await createSession(session, session.issuedAt)
-      return { session, status: 'renewed' }
-    }
-
-    return { session, status: 'valid' }
-  } catch (err) {
-    console.error('[Session Decrypt] Failed:', err)
-    // Invalid/tampered/expired token → treat as unauthenticated
-    return { session: null, status: 'unauthorized' }
-  }
-}
+  })
 
 /**
  * Encrypt the session data and set it as an HttpOnly cookie on the response.
  */
-export async function createSession(data: Omit<SessionData, 'expiresAt' | 'issuedAt'>, existingIssuedAt?: number): Promise<void> {
-  const now = Math.floor(Date.now() / 1000)
-  const expiresAt = now + SESSION_DURATION_SECONDS
-  const issuedAt = existingIssuedAt ?? now
 
-  const sessionData: SessionData = { ...data, expiresAt, issuedAt }
+export const createSession = createServerFn({ method: "POST" })
+  .inputValidator(
+    // Pass the Zod object directly instead of nesting it under an outer object
+    z.object({
+      sessionData: SessionData.omit({ issuedAt: true, expiresAt: true }),
+      existingIssuedAt: z.number().optional(),
+    })
+  )
+  // Let TanStack infer the input from the validator above
+  .handler(async ({ data }): Promise<SessionResult> => {
+    const { sessionData, existingIssuedAt } = data
+    const now = Math.floor(Date.now() / 1000)
+    const expiresAt = now + SESSION_DURATION_SECONDS
+    const issuedAt = existingIssuedAt ?? now
 
-  // Encrypt with jose:
-  // - PBES2-HS256+A128KW: Derives a wrapping key from our SESSION_SECRET using a freshly generated random Salt.
-  // - A256GCM: Encrypts the payload with AES-256-GCM, generating a unique Initialization Vector (IV) and a message integrity tag.
-  const token = await new EncryptJWT(sessionData as unknown as Record<string, unknown>)
-    .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
-    .setIssuedAt()
-    .setExpirationTime(expiresAt)
-    .encrypt(getSecretKey())
+    // Correctly encrypt the full dataset including computed timestamps
+    const fullSessionData: SessionData = { ...sessionData, expiresAt, issuedAt }
 
-  const cookieValue = buildCookieString(COOKIE_NAME, token, SESSION_DURATION_SECONDS)
-  setResponseHeader('Set-Cookie', cookieValue)
-}
+    // Encrypt with jose:
+    // - PBES2-HS256+A128KW: Derives a wrapping key from our SESSION_SECRET using a freshly generated random Salt.
+    // - A256GCM: Encrypts the payload with AES-256-GCM, generating a unique Initialization Vector (IV) and a message integrity tag.
+    const secretKey = await getSecretKey()
+    const token = await new EncryptJWT(fullSessionData as unknown as Record<string, unknown>)
+      .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(expiresAt)
+      .encrypt(secretKey)
+
+    const cookieValue = buildCookieString(COOKIE_NAME, token, SESSION_DURATION_SECONDS)
+    setResponseHeader('Set-Cookie', cookieValue)
+
+    // FIX: Must return a payload matching your SessionResult interface
+    return {
+      session: fullSessionData,
+      status: existingIssuedAt ? 'renewed' : 'valid'
+    }
+  })
+
 
 /**
  * Destroy the session by clearing the cookie (max-age=0).

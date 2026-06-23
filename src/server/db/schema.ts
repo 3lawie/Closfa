@@ -79,7 +79,7 @@ export const media = pgTable("media", {
 export const user = pgTable("user", {
     userId: varchar("user_id").primaryKey().$defaultFn(() => createId()),
     name: text("name").notNull(),
-    nickname: text("nickname").unique(),
+    nickname: text("nickname").unique("name is already taken"),
     email: text("email").notNull().unique(),
     authProviderId: text("auth_provider_id").notNull(),
     authProvider: text("auth_provider").notNull().default("email"),
