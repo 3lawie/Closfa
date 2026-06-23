@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { getSessionFn } from '@/server/lib/sessionFn'
+import { getSession } from '@/server/lib/session'
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
   loader: async () => {
     // Session is already guaranteed by _authenticated layout, but we fetch it
     // here if we need user data.
-    const result = await getSessionFn()
+    const result = await getSession()
     return { session: result.session }
   },
   component: DashboardPage,

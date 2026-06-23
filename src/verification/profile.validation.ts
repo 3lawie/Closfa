@@ -1,11 +1,10 @@
 import { z } from 'zod'
-import { userSchema } from '@/lib/entities/user.schema'
 
 /** Profile update validation */
-export const updateProfileValidation = userSchema.pick({
-  bio: true,
-  website: true,
-  location: true,
+export const updateProfileValidation = z.object({
+  bio: z.string().max(160).optional(),
+  website: z.url().max(255).optional(),
+  location: z.string().max(255).optional(),
 }).extend({
   imageMediaId: z.string().optional(), // ID of the uploaded media record
 })

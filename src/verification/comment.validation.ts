@@ -1,8 +1,12 @@
 import { z } from 'zod'
-import { commentSchema } from '@/lib/entities/comment.schema'
 
 /** Comment creation validation */
-export const createCommentValidation = commentSchema
+export const createCommentValidation = z.object({
+  postId: z.string().min(1, 'Post ID is required'),
+  comment: z.string().min(1, 'Comment cannot be empty').max(1000, 'Comment is too long'),
+  type: z.enum(['text', 'sticker']).optional(),
+  mediaId: z.string().optional(),
+})
 
 /** Comment reply validation */
 export const createReplyValidation = z.object({

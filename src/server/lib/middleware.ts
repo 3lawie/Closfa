@@ -13,7 +13,7 @@
 import { createMiddleware } from '@tanstack/react-start'
 import { getSession, type SessionData, type SessionResult } from './session'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-
+import { checkRateLimit } from './rateLimiter'
 /**
  * Auth middleware — attach to any createServerFn that requires login.
  *
@@ -36,7 +36,7 @@ export const authMiddleware = createMiddleware().server(async ({ next }) => {
   if (request && request.method !== 'GET' && request.method !== 'HEAD') {
     const origin = request.headers.get('origin')
     const host = request.headers.get('host')
-    
+
     // In dev, host might be localhost:5173 but origin is http://localhost:5173
     // We only want to ensure the hostname/port matches.
     if (origin && host) {
@@ -66,3 +66,9 @@ export const authMiddleware = createMiddleware().server(async ({ next }) => {
 
 // Re-export for convenience
 export type { SessionData }
+
+
+export const rateLimiterMiddleWare = createMiddleware().server(async ({ next }) => {
+  await checkRateLimit()
+  return next();
+})

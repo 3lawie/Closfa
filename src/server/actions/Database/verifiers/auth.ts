@@ -6,15 +6,6 @@
 // additional authorization checks (ownership, etc.)
 // ──────────────────────────────────────────────────────────────
 
-import { type SessionData } from '@/server/lib/session'
-
-/** Verify the session exists and has a userId */
-export function verifyIsLoggedIn(session: SessionData | null) {
-  if (!session?.userId) {
-    return { ok: false as const, message: 'Please log in' }
-  }
-  return { ok: true as const, userId: session.userId }
-}
 
 /** Verify the current user owns the resource */
 export function verifyIsOwner(userId: string, resourceOwnerId: string) {

@@ -6,7 +6,7 @@ export const relations = defineRelations(schema, (r) => ({
   profile: {
     user: r.one.user({ from: r.profile.userId, to: r.user.userId }),
     // Direct FK → media: the avatar image record
-    avatar: r.one.media({ from: r.profile.image, to: r.media.media_id }),
+    avatar: r.one.media({ from: r.profile.avatar, to: r.media.media_id }),
     members: r.many.profileMember(),
   },
 

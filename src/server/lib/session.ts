@@ -54,10 +54,10 @@ import { z } from 'zod'
 
 /** What we store inside the session cookie */
 export const SessionData = z.object({
-  userId: z.string(),
-  sub: z.string(),      // Auth0 subject identifier (auth_provider_id)
-  email: z.string().email(),
-  name: z.string(),
+  userId: z.string("userId is required"),
+  sub: z.string("sub is required (Auth Id)"),      // Auth0 subject identifier (auth_provider_id)
+  email: z.string().email("email form is required"),
+  name: z.string("name is required"),
   nickname: z.string().nullable(),
   issuedAt: z.number(), // Unix timestamp
   expiresAt: z.number(), // Unix timestamp
@@ -67,7 +67,7 @@ export type SessionData = z.infer<typeof SessionData>
 
 export const SessionResult = z.object({
   session: SessionData.nullable(),
-  status: z.enum(["valid", 'renewed', 'expired', 'unauthorized'])
+  status: z.enum(["valid", 'renewed', 'expired', 'unauthorized'], "session status is required")
 })
 
 export type SessionResult = z.infer<typeof SessionResult>
@@ -190,12 +190,11 @@ export const createSession = createServerFn({ method: "POST" })
     // Encrypt with jose:
     // - PBES2-HS256+A128KW: Derives a wrapping key from our SESSION_SECRET using a freshly generated random Salt.
     // - A256GCM: Encrypts the payload with AES-256-GCM, generating a unique Initialization Vector (IV) and a message integrity tag.
-    const secretKey = await getSecretKey()
-    const token = await new EncryptJWT(fullSessionData as unknown as Record<string, unknown>)
+    const token = await new EncryptJWT(fullSessionData)
       .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
       .setIssuedAt(issuedAt)
       .setExpirationTime(expiresAt)
-      .encrypt(secretKey)
+      .encrypt(getSecretKey())
 
     const cookieValue = buildCookieString(COOKIE_NAME, token, SESSION_DURATION_SECONDS)
     setResponseHeader('Set-Cookie', cookieValue)
