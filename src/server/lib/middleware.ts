@@ -72,3 +72,41 @@ export const rateLimiterMiddleWare = createMiddleware().server(async ({ next }) 
   await checkRateLimit()
   return next();
 })
+
+/**
+ * Optional Auth middleware — use when a route can be accessed by both guests and users.
+ * If the user is logged in, context.session will be populated.
+ * If the user is a guest, context.session will be null.
+ * It still performs CSRF protection on POST/PUT/DELETE requests.
+ */
+export const optionalAuthMiddleware = createMiddleware().server(async ({ next }) => {
+  const { session, status } = await getSession()
+
+  const request = getRequest()
+  if (request && request.method !== 'GET' && request.method !== 'HEAD') {
+    const origin = request.headers.get('origin')
+    const host = request.headers.get('host')
+
+    if (origin && host) {
+      try {
+        const originUrl = new URL(origin)
+        if (originUrl.host !== host) {
+          throw new Error('CSRF origin mismatch')
+        }
+      } catch {
+        throw new Error('Invalid Origin header')
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      throw new Error('Missing Origin header for state-modifying request')
+    }
+  }
+
+  if (status === 'renewed') {
+    setResponseHeader('X-Session-Status', 'renewed')
+  }
+
+  // Pass session (which may be null) to handler via context
+  return next({
+    context: { session: session ?? null },
+  })
+})

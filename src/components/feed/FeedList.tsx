@@ -50,14 +50,14 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
   const forYouQuery = useInfiniteQuery({
     queryKey: ['feed', 'forYou'],
     queryFn: ({ pageParam }) =>
-      getFeedFn({ data: { cursor: pageParam as string | undefined, limit: 15 } }),
-    initialPageParam: undefined as string | undefined,
+      getFeedFn({ data: { page: pageParam as number, limit: 15 } }),
+    initialPageParam: 1,
     // Seed with the SSR loader data — no loading flash on first render
     initialData: initialFeedPage
-      ? { pages: [initialFeedPage], pageParams: [undefined] }
+      ? { pages: [initialFeedPage], pageParams: [1] }
       : undefined,
     staleTime: 30_000, // re-fetch after 30s in background
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage.nextPage ?? undefined,
   })
 
   // ── "Following" infinite query ──────────────────────────────
@@ -65,11 +65,18 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
   const followingQuery = useInfiniteQuery({
     queryKey: ['feed', 'following', session?.userId],
     queryFn: ({ pageParam }) =>
-      getFollowingFeedFn({ data: { cursor: pageParam as string | undefined, limit: 15 } }),
-    initialPageParam: undefined as string | undefined,
+      getFollowingFeedFn({
+        data: {
+          cursor: (pageParam as any)?.cursor as string | undefined,
+          direction: (pageParam as any)?.direction as 'older' | 'newer' | undefined,
+          limit: 15
+        }
+      }),
+    initialPageParam: { cursor: undefined as string | undefined, direction: 'older' as 'older' | 'newer' },
     enabled: !!session && activeTab === 'following',
     staleTime: 30_000,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ? { cursor: lastPage.nextCursor, direction: 'older' as 'older' | 'newer' } : undefined,
+    getPreviousPageParam: (firstPage) => firstPage.previousCursor ? { cursor: firstPage.previousCursor, direction: 'newer' as 'older' | 'newer' } : undefined,
   })
 
   const activeQuery = activeTab === 'forYou' ? forYouQuery : followingQuery
@@ -131,6 +138,17 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
         <FeedSkeleton />
       ) : (
         <>
+          {activeTab === 'following' && followingQuery.hasPreviousPage && (
+            <button
+              onClick={() => followingQuery.fetchPreviousPage()}
+              disabled={followingQuery.isFetchingPreviousPage}
+              className="w-full py-3 text-sm font-semibold transition-colors flex justify-center items-center"
+              style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}
+            >
+              {followingQuery.isFetchingPreviousPage ? 'Loading...' : 'Load New Posts ↑'}
+            </button>
+          )}
+
           {posts.map((post) => (
             <PostCard key={post.postId} post={post} />
           ))}

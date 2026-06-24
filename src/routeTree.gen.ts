@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as TodoRouteImport } from './routes/Todo'
 import { Route as IndexRouteImport } from './routes/index'
@@ -22,11 +21,6 @@ import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -67,7 +61,6 @@ const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/Todo': typeof TodoRoute
-  '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -77,7 +70,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/Todo': typeof TodoRoute
-  '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -89,7 +81,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/Todo': typeof TodoRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
-  '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -101,7 +92,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/Todo'
-    | '/login'
     | '/onboarding'
     | '/dashboard'
     | '/api/auth/callback'
@@ -111,7 +101,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/Todo'
-    | '/login'
     | '/onboarding'
     | '/dashboard'
     | '/api/auth/callback'
@@ -122,7 +111,6 @@ export interface FileRouteTypes {
     | '/'
     | '/Todo'
     | '/_authenticated'
-    | '/login'
     | '/onboarding'
     | '/_authenticated/dashboard'
     | '/api/auth/callback'
@@ -134,7 +122,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   TodoRoute: typeof TodoRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
-  LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
@@ -148,13 +135,6 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -225,7 +205,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   TodoRoute: TodoRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
-  LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,

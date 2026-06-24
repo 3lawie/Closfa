@@ -44,8 +44,8 @@ function HomePage() {
       {/* Feed column — centered, max 680px, matches Navbar width */}
       <main className="max-w-[680px] mx-auto" style={{ borderInline: '1px solid var(--border)' }}>
         <FeedList
-          session={session}
-          initialFeedPage={firstPage ?? undefined}
+          session={session as any}
+          initialFeedPage={firstPage as any}
         />
       </main>
     </div>

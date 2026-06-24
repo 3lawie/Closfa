@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { postSchema } from '@/lib/entities/post.schema'
+import { Post as postSchema } from '@/lib/entities/Post'
 
 /** Full post creation validation — used in the create post form */
 export const createPostValidation = postSchema.extend({

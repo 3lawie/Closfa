@@ -32,12 +32,12 @@ export async function getProfilePermission(
     where: {
       profileId,
       userId,
-    },
+    } as any,
   })
 
   // Check if user is the profile owner
   const profile = await db.query.profile.findFirst({
-    where: { profile_id: profileId },
+    where: { profile_id: profileId } as any,
   })
   const isOwner = profile?.userId === userId
 

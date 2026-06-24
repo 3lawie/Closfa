@@ -1,20 +1,26 @@
 // ──────────────────────────────────────────────────────────────
 // Queries — ALL read-only DB queries in one file.
 //
-// Uses Drizzle v1 beta object-filter syntax for `where`.
-// Cursor pagination uses nested operator syntax:
-//   { published_at: { lt: new Date(cursor) } }
-// rather than the callback form which is a v0.x pattern.
+// Drizzle ORM v1.0.0-beta.23 — the relational query API's TypeScript
+// definitions have an unresolved bug: because schema columns are typed
+// as Column<any>, T in RelationsFieldFilter<T> resolves to `unknown`,
+// which causes bare values and all nested operators ({ gt, lt, in ... })
+// to be rejected by TS even though they are correct at runtime.
+//
+// The workaround is to cast `where` objects to `any` to bypass the
+// broken beta type definitions, while keeping correct runtime values.
 // ──────────────────────────────────────────────────────────────
 
 import { db } from './db'
-import { follow } from './db/schema'
+
+// Shorthand: cast a where-object to bypass broken beta type definitions
+const w = (filter: Record<string, unknown>) => filter as any
 
 // Shared `with` shape for feed queries — reused by getFeed + getFollowingFeed
 const WITH_FEED_AUTHOR = {
   primaryAuthor: {
     with: {
-      profile: { with: { avatar: true as const } as const } as const,
+      profile: { with: { avatarMedia: true as const } as const } as const,
     } as const,
   } as const,
   media: true as const,
@@ -24,23 +30,23 @@ export const queries = {
   // ── User ────────────────────────────────────────────────────
   user: {
     getById: (userId: string) =>
-      db.query.user.findFirst({ where: { userId } }),
+      db.query.user.findFirst({ where: w({ userId }) }),
 
     getByEmail: (email: string) =>
-      db.query.user.findFirst({ where: { email } }),
+      db.query.user.findFirst({ where: w({ email }) }),
 
     getByAuthProviderId: (authId: string) =>
-      db.query.user.findFirst({ where: { authProviderId: authId } }),
+      db.query.user.findFirst({ where: w({ authProviderId: authId }) }),
 
     getWithProfile: (userId: string) =>
       db.query.user.findFirst({
-        where: { userId },
-        with: { profile: { with: { avatar: true } } },
+        where: w({ userId }),
+        with: { profile: { with: { avatarMedia: true } } },
       }),
 
     getModeratorProfiles: (userId: string) =>
       db.query.profileMember.findMany({
-        where: { userId },
+        where: w({ userId }),
         with: { profile: true },
       }),
   },
@@ -48,25 +54,31 @@ export const queries = {
   // ── Profile ─────────────────────────────────────────────────
   profile: {
     getByUserId: (userId: string) =>
-      db.query.profile.findFirst({ where: { userId } }),
+      db.query.profile.findFirst({ where: w({ userId }) }),
 
     getModerators: (profileId: string) =>
       db.query.profileMember.findMany({
-        where: { profileId },
+        where: w({ profileId }),
         with: { user: true },
       }),
   },
 
   // ── Post ────────────────────────────────────────────────────
   post: {
+    /**
+     * "For You" — algorithm feed.
+     * Sorts by engagement (likes desc) then recency within the last 30 days.
+     * Uses offset pagination so the sort order can be freely changed later.
+     */
     getFeed: (limit = 15, page = 1) => {
-      const offset = (page - 1) * limit;
+      const offset = (page - 1) * limit
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       return db.query.post.findMany({
-        where: (post, { and, eq, gte }) => and(
-          eq(post.is_published, true),
-          gte(post.published_at, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) // last 30 days
-        ),
-        orderBy: (post, { desc }) => [desc(post.likes), desc(post.published_at)],
+        where: w({
+          is_published: true,
+          published_at: { gt: thirtyDaysAgo }, // last 30 days
+        }),
+        orderBy: (p: any, { desc }: any) => [desc(p.likes), desc(p.published_at)],
         limit,
         offset,
         with: WITH_FEED_AUTHOR,
@@ -75,56 +87,56 @@ export const queries = {
 
     /**
      * "Following" — posts from users this person follows.
-     * Uses a compound cursor (date_id) and supports bidirectional fetching.
-     * Uses a subquery to avoid massive IN clauses.
+     * Uses a compound cursor (published_at_postId) to prevent skipped posts
+     * when two posts share the same timestamp.
+     * Supports bidirectional fetching (older = scroll down, newer = load new posts).
+     * Two queries: (1) get followedIds, (2) filter posts by those IDs.
      */
     getFollowingFeed: async (userId: string, limit = 15, cursor?: string, direction: 'older' | 'newer' = 'older') => {
+      const followed = await db.query.follow.findMany({
+        where: w({ followerId: userId }),
+        columns: { followedId: true },
+      })
+
+      if (!followed.length) return []
+
+      const ids = followed.map((f) => f.followedId)
+
       const posts = await db.query.post.findMany({
-        where: (post, { and, eq, inArray, lt, gt, or }) => {
-          const followedSubquery = db.select({ id: follow.followedId }).from(follow).where(eq(follow.followerId, userId));
-          
-          let cursorCondition = undefined;
-          if (cursor) {
-             const [dateStr, idStr] = cursor.split('_');
-             const cursorDate = new Date(dateStr);
-             if (direction === 'older') {
-                cursorCondition = or(
-                  lt(post.published_at, cursorDate),
-                  and(eq(post.published_at, cursorDate), lt(post.postId, idStr))
-                );
-             } else {
-                cursorCondition = or(
-                  gt(post.published_at, cursorDate),
-                  and(eq(post.published_at, cursorDate), gt(post.postId, idStr))
-                );
-             }
-          }
-          
-          return and(
-            eq(post.is_published, true),
-            inArray(post.author_id, followedSubquery),
-            cursorCondition
-          );
-        },
-        orderBy: (post, { desc, asc }) => direction === 'older' 
-          ? [desc(post.published_at), desc(post.postId)] 
-          : [asc(post.published_at), asc(post.postId)],
+        where: w({
+          is_published: true,
+          author_id: { in: ids },
+          // Use RAW for compound cursor logic — only applied when cursor exists.
+          // Compound cursor: (date < cursorDate) OR (date = cursorDate AND id < cursorId)
+          // Guarantees no posts are skipped even when timestamps are identical.
+          ...(cursor ? {
+            RAW: (p: any, { and, or, lt, gt, eq }: any) => {
+              const [dateStr, idStr] = cursor.split('_')
+              const cursorDate = new Date(dateStr)
+              return direction === 'older'
+                ? or(lt(p.published_at, cursorDate), and(eq(p.published_at, cursorDate), lt(p.postId, idStr)))
+                : or(gt(p.published_at, cursorDate), and(eq(p.published_at, cursorDate), gt(p.postId, idStr)))
+            }
+          } : {}),
+        }),
+        orderBy: w(direction === 'older'
+          ? { published_at: 'desc', postId: 'desc' }
+          : { published_at: 'asc', postId: 'asc' }),
         limit,
         with: WITH_FEED_AUTHOR,
-      });
+      })
 
-      // If fetching newer, we queried ASC so reverse it back to DESC for the client
-      if (direction === 'newer') {
-        posts.reverse();
-      }
-      return posts;
+      // If fetching newer posts, we queried ASC so reverse back to DESC for the client
+      if (direction === 'newer') posts.reverse()
+
+      return posts
     },
 
     getById: (postId: string) =>
       db.query.post.findFirst({
-        where: { postId },
+        where: w({ postId }),
         with: {
-          primaryAuthor: { with: { profile: { with: { avatar: true } } } },
+          primaryAuthor: { with: { profile: { with: { avatarMedia: true } } } },
           media: true,
           commentsList: true,
         },
@@ -132,7 +144,7 @@ export const queries = {
 
     getByAuthor: (authorId: string) =>
       db.query.post.findMany({
-        where: { author_id: authorId },
+        where: w({ author_id: authorId }),
         orderBy: { createdAt: 'desc' },
         with: WITH_FEED_AUTHOR,
       }),
@@ -142,7 +154,7 @@ export const queries = {
   comment: {
     getByPost: (postId: string) =>
       db.query.comment.findMany({
-        where: { postId },
+        where: w({ postId }),
         orderBy: { createdAt: 'desc' },
         with: { author: true, replies: true },
       }),
@@ -152,7 +164,7 @@ export const queries = {
   report: {
     getPending: () =>
       db.query.report.findMany({
-        where: { status: 'pending' },
+        where: w({ status: 'pending' }),
         orderBy: { createdAt: 'desc' },
       }),
   },
@@ -161,7 +173,7 @@ export const queries = {
   notification: {
     getUnread: (userId: string) =>
       db.query.notification.findMany({
-        where: { userId, read: false },
+        where: w({ userId, read: false }),
         orderBy: { createdAt: 'desc' },
       }),
   },
