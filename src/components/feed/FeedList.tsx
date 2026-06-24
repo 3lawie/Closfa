@@ -29,16 +29,19 @@ import {
   getFeedFn,
   getFollowingFeedFn,
 } from '@/server/actions/Database/services/feed.service'
-import type { FeedPage } from '@/lib/entities/Post'
-import type { SessionData } from '@/server/lib/session'
+import { feedPage } from '@/lib/entities/Post'
+import { SessionData } from '@/server/lib/session'
+import z from 'zod'
 
 type Tab = 'forYou' | 'following'
 
-interface FeedListProps {
-  session: SessionData | null
-  /** First page of "For You" feed pre-fetched in the SSR loader */
-  initialFeedPage?: FeedPage
-}
+
+const feedListProps = z.object({
+  session: SessionData,
+  initialFeedPage: feedPage
+}).nonoptional()
+
+type FeedListProps = z.infer<typeof feedListProps>
 
 export function FeedList({ session, initialFeedPage }: FeedListProps) {
   const [activeTab, setActiveTab] = useState<Tab>('forYou')

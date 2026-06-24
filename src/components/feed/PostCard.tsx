@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils/cn'
 import { formatRelativeTime, formatCount } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
-import type { FeedPost, FeedPostMedia, FeedPostAuthor } from '@/lib/entities/Post'
+import type { Post, Media, PostAuthor } from '@/lib/entities/Post'
 
 // ── Icons ────────────────────────────────────────────────────
 function IconHeart({ filled }: { filled: boolean }) {
@@ -53,12 +53,12 @@ function IconVerified() {
 }
 
 // ── Avatar ────────────────────────────────────────────────────
-function Avatar({ author }: { author: FeedPostAuthor }) {
+function Avatar({ author }: { author: PostAuthor }) {
   const avatarMedia = author.profile?.avatar
   const initial = (author.name || author.nickname || '?').charAt(0).toUpperCase()
 
-  if (avatarMedia?.mediaUrl) {
-    const url = `${clientEnv.imagekitUrlEndpoint}/tr:w-80,h-80,fo-face,c-at_max,f-avif/${avatarMedia.mediaUrl}`
+  if (avatarMedia) {
+    const url = `${clientEnv.imagekitUrlEndpoint}/tr:w-80,h-80,fo-face,c-at_max,f-avif/${avatarMedia}`
     return (
       <img
         src={url}
@@ -80,13 +80,13 @@ function Avatar({ author }: { author: FeedPostAuthor }) {
 }
 
 // ── Media Grid ────────────────────────────────────────────────
-function MediaGrid({ media }: { media: FeedPostMedia[] }) {
+function MediaGrid({ media }: { media: Media[] }) {
   if (!media.length) return null
 
   const IK = clientEnv.imagekitUrlEndpoint
-  const images = media.filter((m: FeedPostMedia) => m.media_type === 'image')
-  const videos = media.filter((m: FeedPostMedia) => m.media_type === 'video')
-  const audios = media.filter((m: FeedPostMedia) => m.media_type === 'audio')
+  const images = media.filter((m: Media) => m.mediaType === 'image')
+  const videos = media.filter((m: Media) => m.mediaType === 'video')
+  const audios = media.filter((m: Media) => m.mediaType === 'audio')
 
   const displayMedia = [...videos.slice(0, 1), ...images.slice(0, 4)].slice(0, 4)
 
@@ -102,10 +102,10 @@ function MediaGrid({ media }: { media: FeedPostMedia[] }) {
             displayMedia.length === 4 && 'grid-cols-2',
           )}
         >
-          {displayMedia.map((m: FeedPostMedia, i: number) => {
-            if (m.media_type === 'video') {
+          {displayMedia.map((m: Media, i: number) => {
+            if (m.mediaType === 'video') {
               return (
-                <div key={m.media_id} className="relative bg-black aspect-video rounded-xl overflow-hidden">
+                <div key={m.mediaUrl} className="relative bg-black aspect-video rounded-xl overflow-hidden">
                   <video
                     src={`${IK}/${m.mediaUrl}`}
                     className="w-full h-full object-contain"
@@ -121,7 +121,7 @@ function MediaGrid({ media }: { media: FeedPostMedia[] }) {
 
             return (
               <div
-                key={m.media_id}
+                key={m.mediaUrl}
                 className={cn(
                   'overflow-hidden',
                   displayMedia.length === 1 ? 'rounded-xl max-h-[420px]' : '',
@@ -136,9 +136,9 @@ function MediaGrid({ media }: { media: FeedPostMedia[] }) {
         </div>
       )}
 
-      {audios.map((a: FeedPostMedia) => (
+      {audios.map((a: Media) => (
         <audio
-          key={a.media_id}
+          key={a.mediaUrl}
           src={`${IK}/${a.mediaUrl}`}
           controls
           className="w-full h-9 rounded-lg"
@@ -150,12 +150,12 @@ function MediaGrid({ media }: { media: FeedPostMedia[] }) {
 }
 
 // ── PostCard ──────────────────────────────────────────────────
-export function PostCard({ post }: { post: FeedPost }) {
+export function PostCard({ post }: { post: Post }) {
   const [liked, setLiked] = useState(false)
   const [localLikes, setLocalLikes] = useState(post.likes)
   const [expanded, setExpanded] = useState(false)
 
-  const author = post.primaryAuthor
+  const author = post.author
   const isLong = (post.content?.length ?? 0) > 280
 
   function handleLike() {
@@ -179,14 +179,14 @@ export function PostCard({ post }: { post: FeedPost }) {
               {author?.profile?.isVerified && (
                 <span style={{ color: 'var(--accent)' }}><IconVerified /></span>
               )}
-              {post.post_type === 'collab' && (
+              {post.postType === 'collab' && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none" style={{ background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-border)' }}>
                   COLLAB
                 </span>
               )}
             </div>
             <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-s)' }}>
-              {formatRelativeTime(post.published_at)}
+              {formatRelativeTime(post.publishedAt)}
             </span>
           </div>
           {author?.nickname && (
@@ -208,7 +208,7 @@ export function PostCard({ post }: { post: FeedPost }) {
           )}
           <div className="mt-2">
             <span className="inline-block text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: 'var(--social-bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              {post.post_category}
+              {post.postCategory}
             </span>
           </div>
         </div>

@@ -68,10 +68,14 @@ export const Post = z.object({
 
 export type Post = z.infer<typeof Post>
 
-export type FeedPage = {
-  posts: Post[]
-  nextCursor: string | null
-}
+export const feedPage = z.object({
+  posts: z.array(Post),
+  nextCursor: z.string().nullable(),
+  previousCursor: z.string().nullable().optional(),
+  nextPage: z.number().nullable().optional(),
+})
+
+export type FeedPage = z.infer<typeof feedPage>
 
 export const BaseComment = z.object({
   authorId: z.string("comment author ID is required"),

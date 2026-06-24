@@ -42,7 +42,7 @@ export const TokenResponse = z.object({
 
 export type TokenResponse = z.infer<typeof TokenResponse>
 
-export const Auth0UserInfo = z.object({
+export const userInfoFromToken = z.object({
   sub: z.string("unique user id is required"),            // Unique user ID: "auth0|abc123" or "google-oauth2|xyz"
   name: z.string("name is required"),           // Full name
   nickname: z.string("nickname is required from user account"),       // Username/handle (usually email local part)
@@ -51,7 +51,7 @@ export const Auth0UserInfo = z.object({
   picture: z.string().optional(), // Profile picture URL from the identity provider
 })
 
-export type UserInfoFromToken = z.infer<typeof Auth0UserInfo>
+export type UserInfoFromToken = z.infer<typeof userInfoFromToken>
 
 // ──────────────────────────────────────────────────────────────
 // PKCE Helpers
@@ -249,7 +249,7 @@ export async function getUserInfo(accessToken: string): Promise<UserInfoFromToke
   }
 
   const data = await response.json()
-  return Auth0UserInfo.parse(data)
+  return userInfoFromToken.parse(data)
 }
 
 /**

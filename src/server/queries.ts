@@ -8,6 +8,7 @@
 // ──────────────────────────────────────────────────────────────
 
 import { db } from './db'
+import { follow } from './db/schema'
 
 // Shared `with` shape for feed queries — reused by getFeed + getFollowingFeed
 const WITH_FEED_AUTHOR = {
@@ -58,44 +59,65 @@ export const queries = {
 
   // ── Post ────────────────────────────────────────────────────
   post: {
-    /**
-     * "For You" — all published posts newest-first, cursor-paginated.
-     * Cursor = published_at ISO string of the last post seen.
-     * On first call, omit cursor to get the absolute newest posts.
-     */
-    getFeed: (limit = 15, cursor?: string) =>
-      db.query.post.findMany({
-        where: cursor
-          ? { is_published: true, published_at: { lt: new Date(cursor) } }
-          : { is_published: true },
-        orderBy: { published_at: 'desc' },
+    getFeed: (limit = 15, page = 1) => {
+      const offset = (page - 1) * limit;
+      return db.query.post.findMany({
+        where: (post, { and, eq, gte }) => and(
+          eq(post.is_published, true),
+          gte(post.published_at, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) // last 30 days
+        ),
+        orderBy: (post, { desc }) => [desc(post.likes), desc(post.published_at)],
         limit,
+        offset,
         with: WITH_FEED_AUTHOR,
-      }),
+      })
+    },
 
     /**
      * "Following" — posts from users this person follows.
-     * Two queries: (1) get followedIds, (2) filter posts by those IDs.
-     * Can't do a subquery in the relational query API, so we split.
+     * Uses a compound cursor (date_id) and supports bidirectional fetching.
+     * Uses a subquery to avoid massive IN clauses.
      */
-    getFollowingFeed: async (userId: string, limit = 15, cursor?: string) => {
-      const followed = await db.query.follow.findMany({
-        where: { followerId: userId },
-        columns: { followedId: true },
-      })
-
-      if (!followed.length) return []
-
-      const ids = followed.map((f) => f.followedId)
-
-      return db.query.post.findMany({
-        where: cursor
-          ? { is_published: true, author_id: { in: ids }, published_at: { lt: new Date(cursor) } }
-          : { is_published: true, author_id: { in: ids } },
-        orderBy: { published_at: 'desc' },
+    getFollowingFeed: async (userId: string, limit = 15, cursor?: string, direction: 'older' | 'newer' = 'older') => {
+      const posts = await db.query.post.findMany({
+        where: (post, { and, eq, inArray, lt, gt, or }) => {
+          const followedSubquery = db.select({ id: follow.followedId }).from(follow).where(eq(follow.followerId, userId));
+          
+          let cursorCondition = undefined;
+          if (cursor) {
+             const [dateStr, idStr] = cursor.split('_');
+             const cursorDate = new Date(dateStr);
+             if (direction === 'older') {
+                cursorCondition = or(
+                  lt(post.published_at, cursorDate),
+                  and(eq(post.published_at, cursorDate), lt(post.postId, idStr))
+                );
+             } else {
+                cursorCondition = or(
+                  gt(post.published_at, cursorDate),
+                  and(eq(post.published_at, cursorDate), gt(post.postId, idStr))
+                );
+             }
+          }
+          
+          return and(
+            eq(post.is_published, true),
+            inArray(post.author_id, followedSubquery),
+            cursorCondition
+          );
+        },
+        orderBy: (post, { desc, asc }) => direction === 'older' 
+          ? [desc(post.published_at), desc(post.postId)] 
+          : [asc(post.published_at), asc(post.postId)],
         limit,
         with: WITH_FEED_AUTHOR,
-      })
+      });
+
+      // If fetching newer, we queried ASC so reverse it back to DESC for the client
+      if (direction === 'newer') {
+        posts.reverse();
+      }
+      return posts;
     },
 
     getById: (postId: string) =>

@@ -10,7 +10,7 @@ export const Route = createRootRoute({
 })
 
 function RootLayout() {
-  const { queryClient } = Route.useRouteContext() as unknown as { queryClient: QueryClient }
+  const queryClient: QueryClient = Route.useRouteContext()
 
   return (
     <html lang="en">
