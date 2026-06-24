@@ -210,10 +210,11 @@ export const createSession = createServerFn({ method: "POST" })
 /**
  * Destroy the session by clearing the cookie (max-age=0).
  */
-export async function destroySession(): Promise<void> {
-  const cookieValue = buildCookieString(COOKIE_NAME, '', 0)
-  setResponseHeader('Set-Cookie', cookieValue)
-}
+export const destroySession = createServerFn({ method: "POST" })
+  .handler(async (): Promise<void> => {
+    const cookieValue = buildCookieString(COOKIE_NAME, '', 0)
+    setResponseHeader('Set-Cookie', cookieValue)
+  })
 
 // ──────────────────────────────────────────────────────────────
 // Helper: build the Set-Cookie string with security flags
