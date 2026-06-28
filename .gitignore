@@ -30,6 +30,7 @@ videos/
 .env
 .env.*
 !.env.example
+closfa.zip
 
 # Temporary Vite config bundles
 app.config.timestamp_*
