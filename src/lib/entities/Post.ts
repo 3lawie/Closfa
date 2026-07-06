@@ -23,7 +23,7 @@ export const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg'] as c
 export const ALLOWED_MEDIA_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_AUDIO_TYPES] as const
 
 
-export const Media = z.object({
+export const MediaZod = z.object({
   mediaUrl: z.string().min(1, "Media URL is required"),
   mediaType: z.enum(["image", "video", "audio"]),
   fileName: z.string().min(1, "File name is required"),
@@ -35,7 +35,7 @@ export const Media = z.object({
   category: z.array(z.string()).optional(),
 })
 
-export type Media = z.infer<typeof Media>
+export type Media = z.infer<typeof MediaZod>
 
 export const PostAuthor = z.object({
   userId: z.string(),
@@ -63,7 +63,7 @@ export const Post = z.object({
   comments: z.number(),
   shares: z.number(),
   views: z.number(),
-  media: z.array(Media),
+  media: z.array(MediaZod),
 })
 
 export type Post = z.infer<typeof Post>
