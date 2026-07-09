@@ -24,6 +24,7 @@ export const ALLOWED_MEDIA_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYP
 
 
 export const MediaZod = z.object({
+  mediaId: z.string().min(1, "Media ID is required"),
   mediaUrl: z.string().min(1, "Media URL is required"),
   mediaType: z.enum(["image", "video", "audio"]),
   fileName: z.string().min(1, "File name is required"),
