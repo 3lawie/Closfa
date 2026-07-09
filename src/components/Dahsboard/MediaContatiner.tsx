@@ -1,7 +1,8 @@
-import { RefObject, useRef, useState } from "react"
+import { RefObject, useEffect, useRef, useState } from "react"
 import z from "zod"
 import { MediaZod, ALLOWED_MEDIA_TYPES } from "@/lib/entities/Post"
 import { getMediaDimensions, getMediaType } from "@/lib/utils/file"
+import { saveMedia, loadAllMedias, deleteMedia } from "@/lib/utils/mediaDB"
 
 
 const MediaType = z.object({
@@ -18,11 +19,32 @@ export function MediaContatiner() {
     const fileInput = useRef<HTMLInputElement>(null)
     const contatinerRef = useRef<DivRef>(null)
 
+    // Load saved medias from IndexedDB on mount
+    useEffect(() => {
+        let cancelled = false
+        loadAllMedias().then(stored => {
+            if (cancelled) return
+            const loaded: MediaType[] = stored.map(entry => ({
+                ...(entry.metadata as Omit<MediaType, "reader">),
+                reader: URL.createObjectURL(entry.blob),
+            }))
+            setMedias(loaded)
+        })
+        return () => { cancelled = true }
+    }, [])
+
+    // Revoke blob URLs on unmount to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            medias.forEach(m => URL.revokeObjectURL(m.reader))
+        }
+    }, [medias])
+
     async function addFileToMedias(file: File) {
         const mediaType = getMediaType(file.type)
         const dims = await getMediaDimensions(file)
 
-        setMedias(prev => [...prev, {
+        const newMedia: MediaType = {
             originalMedia: {
                 fileName: file.name,
                 fileSize: file.size,
@@ -32,16 +54,31 @@ export function MediaContatiner() {
             },
             editedMedia: undefined,
             reader: URL.createObjectURL(file),
-        }])
+        }
+
+        // Save the raw blob + metadata to IndexedDB
+        await saveMedia({
+            fileName: file.name,
+            blob: file,
+            mimeType: file.type,
+            metadata: {
+                originalMedia: newMedia.originalMedia,
+                editedMedia: newMedia.editedMedia,
+            },
+        })
+
+        setMedias(prev => [...prev, newMedia])
     }
 
-    function removeMedia(media: MediaType) {
-        setMedias(medias.filter(val => val.originalMedia.fileName !== media.originalMedia.fileName))
+    async function removeMedia(media: MediaType) {
         URL.revokeObjectURL(media.reader)
+        await deleteMedia(media.originalMedia.fileName)
+        setMedias(prev => prev.filter(val => val.originalMedia.fileName !== media.originalMedia.fileName))
     }
 
-    function handleFile() {
-        const file = fileInput.current?.files?.[0]
+    function handleFile(e: RefObject<HTMLInputElement | null>) {
+        if (!e.current) return
+        const file = e.current.files?.[0]
         if (!file) return
 
         if (file.size > 12 * 1024 * 1024) {
@@ -49,6 +86,8 @@ export function MediaContatiner() {
             return
         }
         addFileToMedias(file)
+        e.current.value = ""
+        e.current.files = null
     }
 
     function handlePaste(e: React.ClipboardEvent) {
@@ -58,6 +97,7 @@ export function MediaContatiner() {
             if (file) addFileToMedias(file)
         }
     }
+
 
 
     return (
@@ -70,7 +110,7 @@ export function MediaContatiner() {
                     </div>
                 })
             }
-            <input type="file" onClick={handleFile} ref={fileInput} />
+            <input type="file" onChange={() => handleFile(fileInput)} ref={fileInput} />
         </div>
 
     )
