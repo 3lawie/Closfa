@@ -8,12 +8,13 @@ A full-stack social platform built with TanStack Start, deployed on Cloudflare W
 
 | Layer | Technology |
 | :--- | :--- |
-| **Framework** | TanStack Start (React, TypeScript) |
+| **Framework** | TanStack Start (React 19, TypeScript) |
 | **Deployment** | Cloudflare Workers (`@cloudflare/vite-plugin`) |
 | **Database** | Neon (serverless Postgres) via Drizzle ORM |
 | **Auth** | Auth0 — Authorization Code + PKCE (BFF pattern) |
 | **Sessions** | Encrypted JWE cookies via `jose` (stateless, edge-ready) |
 | **Media** | ImageKit (HMAC-signed uploads) |
+| **Rate limiting** | Upstash Redis (`@upstash/ratelimit`) |
 | **Styling** | Tailwind CSS v4 |
 
 ---
@@ -22,14 +23,19 @@ A full-stack social platform built with TanStack Start, deployed on Cloudflare W
 
 ```bash
 npm install
-npm run dev
+npm run dev        # Vite dev server
+npm run lint       # ESLint
+npx tsc --noEmit   # typecheck
+npm run db:push    # push Drizzle schema to Neon — review generated SQL first
+npm run db:studio  # browse the database
+npm run deploy     # build + deploy to Cloudflare Workers
 ```
 
 ---
 
 ## Server Architecture Rules
 
-These are enforced conventions that every contributor must follow. They exist to prevent subtle bugs, double-decryption, and security regressions.
+These are enforced conventions that every contributor must follow. They exist to prevent subtle bugs, double-decryption, and security regressions. The full pattern catalog with exemplar files lives in [DESIGN_PATTERNS.md](./DESIGN_PATTERNS.md).
 
 ---
 
@@ -46,6 +52,8 @@ The session JWE is expensive to decrypt (cryptographic operation). It must be de
 | Verifiers (`auth.ts`, `permissions.ts`) | Receive `session` as a **parameter** | Pure functions called from within handlers that already hold the session |
 
 > **Never** call `getSession()` inside a `.handler()` body when `authMiddleware` is already in the chain. This decrypts the JWE **twice** per request and skips the CSRF Origin check.
+>
+> Remember: route `beforeLoad` guards only protect UI navigation. An attacker can POST to a server function directly — **the middleware chain is the real security boundary** (see `src/server/lib/middleware.ts`).
 
 ```typescript
 // ✅ Correct
@@ -96,9 +104,23 @@ await db.update(schema.user)
 - `db.query.*` → use `{ field: value }` objects
 - `db.update / delete / insert` → use `eq()`, `and()`, `or()` from `drizzle-orm`
 - Do not import `eq` in files that only use `db.query.*`
+- Never silence a filter type error with `as any` — it usually means you're on the wrong API
 
 ---
 
-## Architecture Guide
+### Rule 3 — Validation and Results
 
-For the full server security design — session renewal flows, rate limiting tiers, CSRF hardening, onboarding, subscription schema, and the complete refactor plan — see the [Auth Architecture Guide](../../Users/Alimuhannad/.gemini/antigravity-ide/brain/2d904e77-1420-4803-96ee-50d31e57976a/auth_architecture_guide.md).
+Every `createServerFn` validates its input with a Zod schema from `src/verification/` via `.inputValidator(schema)`, and returns a `ServerResult<T>` (`src/server/lib/result.ts`) for expected failures instead of throwing. Details and examples: [DESIGN_PATTERNS.md](./DESIGN_PATTERNS.md) §3–4.
+
+---
+
+## AI Tooling
+
+This repo carries a Claude Code environment in `.claude/` that enforces the rules above:
+
+- `CLAUDE.md` — always-loaded facts and invariants for the agent
+- `/teach`, `/patterns`, `/full-review` and more — skills in `.claude/skills/`
+- Specialized reviewers (system, code, security, UI, UX) in `.claude/agents/`
+- Hooks in `.claude/hooks/` — auto-lint on edit; destructive commands (db push, deploy, force-push) are blocked and left to the developer
+
+How to drive it: see [`.claude/USING_THE_SKILLS.md`](./.claude/USING_THE_SKILLS.md).
