@@ -1,65 +1,107 @@
-# DESIGN PATTERNS
+# Design Patterns
 
-This document details the architectural decisions and patterns used in the Closfa App. It ensures code consistency and a high level of professional design. Each pattern names its **exemplar file** — when writing new code, mirror the exemplar, not memory.
+Architectural decisions and patterns that govern this codebase. Each pattern names its **governing principle**, **exemplar file** (the living reference to mirror), and any **known drift** (code that predates the rule).
 
-> Enforcement: these patterns are checked by the `.claude` reviewer agents (`/full-review`) and referenced by the `/patterns` skill. When code and this document disagree, fix one of them — never let them drift silently.
+> Enforcement: these patterns are validated by the `.claude` reviewer agents (`/full-review`) and referenced by the `/patterns` skill. When code and this document disagree, fix one of them — never let them drift silently.
 
-## 1. Authentication Architecture (BFF Pattern)
-We use a **Backend-for-Frontend (BFF)** pattern for authentication. Exemplar: `src/server/actions/ThirdParty/OAuth/auth0.service.ts`, `src/server/lib/session.ts`.
+---
+
+## 1. Authentication — Backend-for-Frontend (BFF)
+
+**Principle:** Tokens never reach the client. The server is the only actor that holds credentials.
+
+**Exemplar:** `src/server/actions/ThirdParty/OAuth/auth0.service.ts`, `src/server/lib/session.ts`
+
 - **No SPA tokens**: The client browser never receives JWT access tokens.
-- **Encrypted Session**: Once authenticated, the server encrypts the session payload using `jose` (JWE) and sends an `HttpOnly`, `SameSite=Lax` cookie.
-- **Reduced XSS blast radius**: Tokens never reach the client, so script injection cannot steal them. (XSS itself is still mitigated separately — React escaping, no `dangerouslySetInnerHTML` with user content.)
+- **Encrypted session**: Once authenticated, the server encrypts the session payload using JWE and sends an `HttpOnly`, `SameSite=Lax` cookie.
+- **Reduced XSS blast radius**: Script injection cannot steal tokens because they never leave the server. (XSS itself is still mitigated separately — React escaping, no `dangerouslySetInnerHTML` with user content.)
 
-## 2. Sliding Window Session Management
-Exemplar: `src/server/lib/session.ts`.
-- **Threshold Renewal**: Sessions renew automatically when passing a 25% expiration threshold to avoid abrupt logouts.
-- **Absolute Expiration Cap**: For security, no session can live indefinitely. A 30-day absolute cap (`issuedAt` timestamp tracking) forces re-authentication.
-- **Decrypt once per request**: the JWE is decrypted exactly once, by the middleware chain — see README Rule 1.
+---
 
-## 3. ServerResult Pattern (Result Unions)
-Exemplar: `src/server/lib/result.ts`, consumed by verifiers in `src/server/actions/Database/verifiers/`.
+## 2. Sliding Window Sessions
 
-Instead of throwing generic errors that the frontend must blindly catch, we use a structured `ServerResult<T>` union type.
+**Principle:** Sessions balance convenience (don't log out mid-task) with security (don't live forever).
+
+**Exemplar:** `src/server/lib/session.ts`
+
+- **Threshold renewal**: Sessions renew automatically when passing a 25% expiration threshold.
+- **Absolute cap**: A 30-day absolute expiration (`issuedAt` tracking) forces re-authentication regardless of activity.
+- **Decrypt once per request**: The JWE is decrypted exactly once by the middleware chain. Server function handlers read `context.session` — never calling the session decryption function directly. See CLAUDE.md invariant 1.
+
+---
+
+## 3. Error Contract — Result Unions
+
+**Principle:** Expected failures are values, not exceptions. The caller is forced to handle both arms.
+
+**Exemplar:** `src/server/lib/result.ts`, consumed by verifiers in `src/server/actions/Database/verifiers/`
+
 ```typescript
 type ServerResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ErrorCode; message: string; issues?: ZodIssue[] }
 ```
-This forces the developer to handle both success and failure cases explicitly in the UI without relying on hidden `try/catch` blocks.
 
-**Rule of thumb:** *expected* failures (not found, forbidden, invalid input) return `{ ok: false, ... }`; `throw` is reserved for unexpected/infrastructure failures (DB down, crypto error).
+**Rule of thumb:** *expected* failures (not found, forbidden, invalid input) return `{ ok: false, ... }`; `throw` is reserved for *unexpected* infrastructure failures (DB down, crypto error).
 
 > ⚠️ Known drift: some services (e.g. `post.service.ts`) still `throw new Error(...)` for expected cases. The pattern stands; the code must catch up. Do not copy the throwing style into new services.
 
-## 4. Input Validation (Zod)
-Exemplar: `src/verification/post.validation.ts`.
+---
 
-Every `createServerFn` must implement an `.inputValidator(schema)` using Zod. Schemas are centralized inside **`src/verification/`** so they can be shared between server actions and client-side forms.
+## 4. Input Validation — Schema-First
 
-**Corollary:** a handler that reads `data as any` is a rule violation — the validated type should flow from the Zod schema (`z.infer`).
+**Principle:** Every external input is validated at the boundary. Schemas are the single source of truth for shape, shared between server and client.
+
+**Exemplar:** `src/verification/post.validation.ts`
+
+- Every `createServerFn` must have `.inputValidator(schema)` using Zod.
+- Schemas are centralized in `src/verification/` so client forms and server functions share the same contract.
+- A handler that reads `data as any` is a violation — the validated type flows from the schema (`z.infer`).
 
 > ⚠️ Known drift: `post.service.ts` handlers currently use `data as any` with no validator. Fixing these is the reference exercise for the `/teach` skill.
 
-## 5. Defense in Depth
-- **The middleware chain is the security boundary** (`src/server/lib/middleware.ts`): route `beforeLoad` guards only protect navigation; every protected server function must carry `authMiddleware`.
-- **CSRF**: Strict `Origin` and `Host` validation middleware before protected server functions execute.
-- **Rate Limiting**: Implementation via Upstash Redis (`@upstash/ratelimit`, `src/server/lib/rateLimiter.ts`). Anonymous users are tracked via a composite `IP + User-Agent` key to resist trivial proxy-hopping.
-- **Turnstile**: Sensitive forms implement Cloudflare Turnstile (`src/server/lib/turnstile.ts`) to verify genuine human interaction before processing data.
-- **Ownership checks**: writes on user-owned rows go through pure verifiers (`verifyIsOwner` in `src/server/actions/Database/verifiers/auth.ts`) using the **session's** userId — never an id supplied by the client payload.
+---
 
-## 6. Drizzle ORM Standards
-Exemplar: README Rule 2 code samples; schema in `src/server/db/schema.ts`.
-- **Reads (`db.query`)**: Prefer object syntax for relation-heavy reads (`findFirst({ where: ... })`).
-- **Writes (`db.update/delete`)**: Always use explicit operator syntax (`eq()`, `and()`) to prevent destructive accidents.
-- **Batching**: never loop awaited single-row queries (N+1); use batch `insert(...).values([...])` and `inArray()`.
+## 5. Defense in Depth
+
+**Principle:** Every layer adds its own check. If one layer fails, the next catches it. The middleware chain is the only real security boundary — route guards are cosmetic.
+
+| Defense | Implementation | Exemplar |
+|---|---|---|
+| **Authorization** | `authMiddleware` on every state-changing server function | `src/server/lib/middleware.ts` |
+| **CSRF** | Strict Origin + Host validation in the middleware | `src/server/lib/middleware.ts` |
+| **Rate limiting** | Upstash Redis with composite IP+UA key for anonymous users | `src/server/lib/rateLimiter.ts` |
+| **Bot protection** | Cloudflare Turnstile on abuse-prone forms | `src/server/lib/turnstile.ts` |
+| **Ownership checks** | Pure verifier functions using the session's userId — never a client-supplied ID alone | `src/server/actions/Database/verifiers/auth.ts` |
+
+---
+
+## 6. ORM Standards — Drizzle
+
+**Principle:** The ORM has two distinct APIs with incompatible filter syntax. Using the wrong one causes type errors or silent wrong queries.
+
+**Exemplar:** CLAUDE.md invariant 2; schema in `src/server/db/schema.ts`
+
+| API | Use for | Filter syntax |
+|---|---|---|
+| **Relational** — `db.query.*` | Read operations with joins/relations | Object syntax: `{ field: value }` |
+| **Builder** — `db.update/delete/insert` | Write operations and complex reads | Operator functions: `eq()`, `and()`, `or()` |
+
+**Rules:**
+- Never mix syntax across APIs
+- Never silence a filter type error with `as any` — it means you're on the wrong API
+- Never loop awaited single-row queries (N+1) — use batch `insert(...).values([...])` and `inArray()`
+
+---
 
 ## 7. Layered Server Structure
-New server features follow the service / verifier / validation triangle:
 
-| Piece | Location | Responsibility |
-| :--- | :--- | :--- |
-| Service (server functions) | `src/server/actions/Database/services/` | Business logic + DB access |
-| Verifier (pure authz) | `src/server/actions/Database/verifiers/` | Ownership/permission checks; receives `session` as a parameter |
-| Validation (Zod schema) | `src/verification/` | Input shape, shared with client forms |
+**Principle:** Separation of concerns via a service/verifier/validation triangle. Routes and components never access persistence directly.
 
-Routes and components never query the database directly, and nothing under `src/components/` or `src/lib/` imports from `src/server/` (env leakage + bundle bloat).
+| Layer | Location | Responsibility |
+|---|---|---|
+| **Service** (server functions) | `src/server/actions/Database/services/` | Business logic + DB access |
+| **Verifier** (pure authorization) | `src/server/actions/Database/verifiers/` | Ownership/permission checks; receives `session` as parameter |
+| **Validation** (Zod schemas) | `src/verification/` | Input shape, shared with client forms |
+
+**Boundary rule:** nothing under `src/components/` or `src/lib/` imports from `src/server/` — this prevents environment leakage and bundle bloat.

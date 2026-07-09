@@ -5,11 +5,14 @@
       "Bash(npx tsc*)",
       "Bash(npx eslint*)",
       "Bash(npm run build*)",
+      "Bash(npm test*)",
+      "Bash(npm run test*)",
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(git show*)",
       "Bash(git branch*)",
+      "Bash(git ls-files*)",
       "Bash(node --version*)",
       "Bash(npm ls*)"
     ],
@@ -17,13 +20,28 @@
       "Bash(npm run db:push*)",
       "Bash(npx drizzle-kit push*)",
       "Bash(npm run deploy*)",
-      "Bash(npx wrangler deploy*)",
+      "Bash(npx wrangler*)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(npm publish*)",
       "Read(./.env)",
       "Read(./.env.local)",
-      "Read(./.env.production)"
+      "Read(./.env.production)",
+      "Read(./.dev.vars)"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-context.mjs\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -42,6 +60,28 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/format-on-edit.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/verify-on-stop.mjs\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify-done.ps1\""
           }
         ]
       }

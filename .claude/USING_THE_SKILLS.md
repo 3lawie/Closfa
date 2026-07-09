@@ -1,65 +1,70 @@
-# Driving the Closfa AI Environment
+# Driving the AI Environment
 
-How the skills, agents, and hooks in this folder work together, how Claude moves from one skill to another, and how to phrase requests so the right machinery fires.
+How the skills, agents, and hooks work together — and how to phrase requests so the right intelligence fires.
 
-## The pieces and their altitude
+## The architecture at a glance
 
-| Piece | Loaded | Job |
+| Layer | Loaded | Purpose |
 | :--- | :--- | :--- |
-| `CLAUDE.md` (repo root) | Always | Facts + invariants (the six rules, layout, commands) |
-| **Skills** (`.claude/skills/`) | When their `description` matches the task | Procedures and knowledge — how to design, build, review, learn |
-| **Agents** (`.claude/agents/`) | When spawned (usually by `/full-review`) | Isolated reviewers with clean context |
-| **Hooks** (`.claude/hooks/` + `settings.json`) | Automatically, every matching tool call | Guarantees: auto-lint on edit, destructive commands blocked |
+| `CLAUDE.md` (repo root) | Always | Invariants — stack, commands, architecture rules, layout |
+| **Skills** (`.claude/skills/`) | When their `description` matches the task | Principles and procedures — how to design, build, debug, review, refactor, learn |
+| **Agents** (`.claude/agents/`) | When spawned (by `/full-review`) | Isolated reviewers with clean context and focused scope |
+| **Hooks** (`.claude/hooks/` + `settings.json`) | Automatically, every matching lifecycle event | Deterministic guarantees: auto-format on edit, destructive commands blocked, lint+typecheck on stop, context injected at session start, notifications on completion |
 
-## The skill catalog and the lifecycle they form
+## The skill catalog
 
-Skills are arranged along the life of a feature:
+Skills are arranged along the life of a feature. The model chains them automatically as work crosses layer boundaries — you don't need to name every skill.
 
 ```
 IDEA ──▶ /system-design ──▶ /patterns ──▶ /web-design-patterns ──▶ /creative-ui ──▶ /full-review ──▶ /teach
-         (architecture,      (server:       (routes, data           (the visual      (5 parallel      (understand
-          data model,         service/       loading, caching,       layer)           reviewers)       what was
-          boundaries)         verifier/      optimistic UI,                                            built)
-                              validation)    states)
+         (decompose into    (discover      (data loading,           (visual layer    (5 parallel      (understand
+          data model,         exemplars,     states, mutations,       design system,   reviewers        what was
+          boundaries,         scaffold       pagination, flow)        tokens, a11y)    synthesize)      built)
+          constraints)        new code)
 ```
 
-- **`/system-design`** — before code: data model, route/data flow, boundary table. Design first, approve, then build.
-- **`/patterns`** — the server rulebook: which exemplar file to mirror for services, verifiers, Zod schemas.
-- **`/web-design-patterns`** — the app-flow rulebook: loaders vs component queries, cursor pagination, optimistic vs pessimistic mutations, the four mandatory states.
-- **`/creative-ui`** — the visual rulebook: read existing primitives first, tokens over values, both themes, a11y, anti-generic-AI-look rules.
-- **`/full-review`** — spawns the five reviewer agents in parallel (system, code, security, ui, ux) and merges findings by severity.
-- **`/teach`** — explains any code or change: the pattern, why here, tradeoff, alternatives, exercise.
+Plus two utility skills available anytime:
+- **`/debug`** — systematic diagnosis: reproduce → isolate → hypothesize → instrument → fix → verify.
+- **`/refactor`** — safe restructuring: discover → diagnose debt → decompose into safe steps → scaffold → instrument.
 
-## How skills chain (this is the important mental model)
+## How to phrase requests — the Fable 5 way
 
-Claude doesn't need you to name every skill. Two mechanisms move it from one skill to the next:
+The most effective prompt has three ingredients:
 
-1. **Trigger by description.** Each SKILL.md frontmatter `description` says *when it applies*. When the conversation reaches a matching sub-task, Claude loads that skill — mid-task. Ask to "build a bookmarks feature" and the work itself walks the chain: designing → `system-design` fires; writing the service → `patterns`; the route → `web-design-patterns`; the component → `creative-ui`.
-2. **Explicit handoffs.** Every skill here ends with a **Handoffs** section telling Claude which skill owns the neighboring problem ("the surface needs a new server capability → stop, run /system-design first"). That's a skill *instructing the model to switch skills* — the chain is written into the skills themselves.
+1. **Outcome** — what "done" looks like
+2. **Constraints** — what must not change
+3. **Why** — the context that connects the task to the right reasoning
 
-The reviewers close the loop: `ui-reviewer` and `ux-reviewer` read `creative-ui` and `web-design-patterns` as their criteria, so **the same rules that guided the building do the judging.** When you change a rule, change it in one skill file and both sides update.
+### Examples
 
-## Phrasing requests for best results
-
-The pattern: **verb + scope + the skill's trigger words**. The description matching is semantic — use the vocabulary from the skill you want.
-
-| You want | Say | What fires |
+| You want | Say | Why this works |
 | :--- | :--- | :--- |
-| A feature designed before building | "**Design** a bookmarks feature — **system design** first, don't write code yet" | system-design |
-| A feature built end-to-end | "Build the bookmarks feature from the approved design" | patterns → web-design-patterns → creative-ui (in sequence, as the work reaches each layer) |
-| A page modernized | "Rework the dashboard **route's data loading and states** to the modern patterns" | web-design-patterns (+ creative-ui if visuals change) |
-| A visual pass only | "Restyle the post card — **creative UI**, keep behavior" | creative-ui |
-| Judgment on finished work | "/full-review" (or "review this before I merge") | full-review → 5 agents |
-| To understand something | "/teach src/server/lib/session.ts" | teach |
+| A feature designed before building | "Design a bookmarks feature — system design first, don't write code yet" | Triggers `/system-design`; "don't write code" constrains to design-only |
+| A feature built end-to-end | "Build the bookmarks feature from the approved design" | `/patterns` → `/web-design-patterns` → `/creative-ui` chain automatically as work crosses layers |
+| A data-loading pattern modernized | "Rework the dashboard route to use route-level loaders and streaming" | Triggers `/web-design-patterns` directly |
+| A visual pass only | "Restyle the post card — creative UI, keep behavior unchanged" | "Keep behavior unchanged" constrains scope; triggers `/creative-ui` |
+| A bug fixed | "The feed pagination breaks when scrolling past page 3 — debug it" | Triggers `/debug`; specific reproduction helps |
+| Code cleaned up | "Refactor the comment service — reduce duplication without changing the API" | Triggers `/refactor`; "without changing the API" is the constraint |
+| Judgment on finished work | "/full-review" | Spawns 5 reviewer agents in parallel |
+| Understanding | "/teach src/server/lib/session.ts" | Triggers `/teach` with a specific target |
 
-Sharper habits:
+### Habits that compound
 
-- **Scope beats size.** "Fix the feed's pagination" outperforms "improve the app". Small scope + clear intent = the right single skill; vague scope = generic output.
+- **Scope beats size.** "Fix the feed's pagination" outperforms "improve the app." Small scope + clear intent = the right skill fires.
 - **Front-load constraints.** "…without touching the schema", "…keep the current API" — constraints stated first are respected; stated after the work, they're rework.
-- **Plan mode for anything structural** (`shift+tab`): research + proposal before edits. Combine: plan mode + "system design for X" is the strongest opener in this repo.
-- **Let the project be read.** For whole-app questions ("is our data flow modern?"), say "**read the relevant code first**, then answer" — the skills mandate reading exemplars, but an explicit read instruction widens it.
-- **One feature per conversation.** Fresh context per feature keeps skills sharp; long mixed sessions blur which rules apply.
+- **Plan mode for anything structural** (`shift+tab`): research + proposal before edits. Plan mode + "system design for X" is the strongest opener.
+- **Let the codebase be read.** For whole-project questions, say "read the relevant code first, then answer" — skills mandate discovery, but explicit read instructions widen the scope.
+- **One feature per conversation.** Fresh context per feature keeps skills sharp; long mixed sessions blur which principles apply.
+- **State the why.** "Add a loading state" is a task. "Add a loading state because users on slow connections see a blank flash for 2 seconds" is an outcome — it activates deeper reasoning.
 
-## What you never have to ask for
+## What fires without asking
 
-Hooks fire regardless of phrasing: every `.ts/.tsx` edit is auto-linted; `db:push`, `wrangler deploy`, `git push --force`, `git reset --hard`, and destructive SQL are blocked with an explanation. Lint/typecheck/git-reads run without permission prompts.
+Hooks are deterministic — they fire regardless of your phrasing:
+
+| Event | Hook | Effect |
+|---|---|---|
+| Any `.ts/.tsx` file edited | `format-on-edit.mjs` | Auto-runs ESLint --fix |
+| Any bash command | `guard-bash.mjs` | Blocks destructive operations (db:push, force-push, rm -rf, curl, deploy, publish) |
+| Claude tries to stop | `verify-on-stop.mjs` | Runs lint + typecheck — blocks completion if errors exist |
+| Session starts | `inject-context.mjs` | Injects git branch, recent commits, staged/unstaged changes |
+| Notification event | `notify-done.ps1` | Windows toast notification when attention is needed |

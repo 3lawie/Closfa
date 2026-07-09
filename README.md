@@ -33,94 +33,37 @@ npm run deploy     # build + deploy to Cloudflare Workers
 
 ---
 
-## Server Architecture Rules
+## Architecture
 
-These are enforced conventions that every contributor must follow. They exist to prevent subtle bugs, double-decryption, and security regressions. The full pattern catalog with exemplar files lives in [DESIGN_PATTERNS.md](./DESIGN_PATTERNS.md).
+The full pattern catalog with exemplar files and code samples lives in [DESIGN_PATTERNS.md](./DESIGN_PATTERNS.md). These are the core invariants:
 
----
+### Session integrity
+The session JWE is decrypted **exactly once per request** via the middleware chain. Server functions read the session from middleware context — never by calling the decryption function directly. Route `beforeLoad` guards are UI-only and cannot enforce security.
 
-### Rule 1 — Session Access: `authMiddleware` vs `getSession()`
+### Input validation
+Every server function validates input with a Zod schema from `src/verification/`. Schemas are the single source of truth, shared between server actions and client forms.
 
-The session JWE is expensive to decrypt (cryptographic operation). It must be decrypted **exactly once per request**. Never call `getSession()` inside a `createServerFn` handler — use `context.session` from the middleware chain instead.
+### Error contract
+Expected failures return a structured `ServerResult<T>` — `{ ok: true, data }` or `{ ok: false, error, message }`. Throws are reserved for unexpected infrastructure faults. Both arms must be handled in the UI.
 
-| Location | Correct Pattern | Why |
-| :--- | :--- | :--- |
-| `createServerFn` handlers (auth required) | `.middleware([authMiddleware])` → read `context.session` | Decrypts once, runs CSRF check, passes session via context |
-| `createServerFn` handlers (public + auth mixed) | `.middleware([rateLimitMiddleware(...)])` | No auth enforcement, reads session optionally for rate key |
-| Route `beforeLoad` guards (`_authenticated.tsx`) | `getSessionFn()` → `getSession()` internally | Route guards are not server functions; middleware chain does not apply |
-| Route `beforeLoad` public pages | `optionalAuthGuard()` / `getSessionFn()` | Same as above — route-level context only |
-| Verifiers (`auth.ts`, `permissions.ts`) | Receive `session` as a **parameter** | Pure functions called from within handlers that already hold the session |
+### Defense in depth
+The middleware chain is the **only** real security boundary. It enforces authorization, CSRF (Origin/Host validation), and rate limiting. Route guards only protect navigation. Ownership checks are pure functions receiving the session — never trusting client-supplied IDs alone.
 
-> **Never** call `getSession()` inside a `.handler()` body when `authMiddleware` is already in the chain. This decrypts the JWE **twice** per request and skips the CSRF Origin check.
->
-> Remember: route `beforeLoad` guards only protect UI navigation. An attacker can POST to a server function directly — **the middleware chain is the real security boundary** (see `src/server/lib/middleware.ts`).
+### ORM discipline
+Drizzle exposes two APIs with incompatible syntax: `db.query.*` (relational reads → object filters) and `db.update/delete/insert` (builder writes → operator functions). Never mix them. Never silence a type error with `as any`.
 
-```typescript
-// ✅ Correct
-export const createPost = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
-  .handler(async ({ context }) => {
-    const { userId } = context.session  // ← session from middleware, decrypted once
-  })
-
-// ❌ Wrong — double decryption + CSRF bypass
-export const createPost = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
-  .handler(async () => {
-    const session = await getSession()  // ← decrypts again, skips CSRF check
-  })
-```
-
----
-
-### Rule 2 — Drizzle Query Syntax
-
-Drizzle exposes two distinct internal APIs. Each has its own filter syntax. Mixing them causes type errors or silent wrong queries.
-
-| API | When to Use | Filter Syntax |
-| :--- | :--- | :--- |
-| **Relational API** — `db.query.*` | Read operations with joins / relations | Plain objects: `{ field: value }` |
-| **SQL Builder API** — `db.update / delete / select` | Write operations and complex reads | Operator functions: `eq()`, `and()`, `or()` |
-
-```typescript
-// ✅ Relational API — object filters are parsed by Drizzle's relational layer
-const user = await db.query.user.findFirst({
-  where: { email: 'user@example.com' },  // ← plain object ✓
-  with: { profile: true },
-})
-
-// ✅ SQL Builder API — operators generate raw SQL, objects are not supported
-await db.update(schema.user)
-  .set({ nickname: 'newname' })
-  .where(eq(schema.user.userId, userId))  // ← eq() required ✓
-
-// ❌ Wrong — object filter in SQL Builder throws a TypeScript error
-await db.update(schema.user)
-  .set({ nickname: 'newname' })
-  .where({ userId: userId })              // ← does not compile ✗
-```
-
-**Rules:**
-- `db.query.*` → use `{ field: value }` objects
-- `db.update / delete / insert` → use `eq()`, `and()`, `or()` from `drizzle-orm`
-- Do not import `eq` in files that only use `db.query.*`
-- Never silence a filter type error with `as any` — it usually means you're on the wrong API
-
----
-
-### Rule 3 — Validation and Results
-
-Every `createServerFn` validates its input with a Zod schema from `src/verification/` via `.inputValidator(schema)`, and returns a `ServerResult<T>` (`src/server/lib/result.ts`) for expected failures instead of throwing. Details and examples: [DESIGN_PATTERNS.md](./DESIGN_PATTERNS.md) §3–4.
+### Layered server structure
+New features follow the **service / verifier / validation** triangle. Services own DB access, verifiers are pure authorization functions, validation schemas are shared. Nothing in `src/components/` or `src/lib/` imports from `src/server/`.
 
 ---
 
 ## AI Tooling
 
-This repo carries a Claude Code environment in `.claude/` that enforces the rules above:
+This repo includes an AI development environment in [`.claude/`](./.claude/) with:
 
-- `CLAUDE.md` — always-loaded facts and invariants for the agent
-- `/teach`, `/patterns`, `/full-review` and more — skills in `.claude/skills/`
-- Specialized reviewers (system, code, security, UI, UX) in `.claude/agents/`
-- Hooks in `.claude/hooks/` — auto-lint on edit; destructive commands (db push, deploy, force-push) are blocked and left to the developer
+- **8 skills** — system-design, patterns, web-design-patterns, creative-ui, full-review, teach, debug, refactor
+- **5 reviewer agents** — system, code, security, UI, UX (run in parallel via `/full-review`)
+- **5 lifecycle hooks** — auto-format on edit, destructive command guard, stop-time verification (lint + typecheck), session context injection, completion notification
+- **Automated quality gates** — every task must pass lint and typecheck before the agent can finish
 
-How to drive it: see [`.claude/USING_THE_SKILLS.md`](./.claude/USING_THE_SKILLS.md).
+How to drive it: [USING_THE_SKILLS.md](./.claude/USING_THE_SKILLS.md).
