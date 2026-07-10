@@ -6,6 +6,8 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Systematic Debugging
 
+Read `learnings.md` beside this file before starting; append an entry when a bug's root cause defied a category below.
+
 ## Governing Principle
 
 > **Bugs are information gaps.** Debugging is not guessing — it is a systematic process of narrowing the gap between expected and actual behavior until the root cause is isolated and verifiable.

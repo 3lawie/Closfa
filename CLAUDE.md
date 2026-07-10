@@ -39,6 +39,24 @@ Discover these directories to understand the codebase structure:
 - Explain non-obvious decisions when making changes (this repo doubles as a learning project)
 - New code mirrors the closest existing exemplar — when no exemplar fits, propose a pattern before writing
 
+## Model routing — orchestrator + free workers
+
+Rankings: higher = better (1–9). The paid Claude model in this session is the ORCHESTRATOR: it plans, decomposes, delegates, reviews, and ships. Free OpenRouter workers do bulk drafting, analysis, and search via `node .claude/tools/ask-worker.mjs` (fallback chains built in; needs `OPENROUTER_API_KEY`).
+
+| model | cost | intelligence | code | design taste | context | use for |
+|---|---|---|---|---|---|---|
+| Claude (this session) | 2 | 9 | 9 | 9 | 200K | decisions, architecture, review, final UI polish, anything shipped |
+| `qwen/qwen3-coder:free` (`--role code`/`design`) | 9 | 7 | 8 | 6 | 1M | code drafts, whole-repo analysis, first-pass UI |
+| `openai/gpt-oss-120b:free` (`--role reason`) | 9 | 7 | 6 | 4 | 131K | reasoning-heavy drafts, analysis, explanations |
+| `nvidia/nemotron-3-ultra-550b:free` (`--role bulk`) | 9 | 6 | 5 | 3 | 1M | bulk read/summarize of logs, docs, large files |
+| `qwen/qwen3-next-80b:free` (`--role general`) | 9 | 5 | 5 | 4 | 262K | general grunt work, structured extraction |
+
+How to apply:
+- **Delegate down** when the task is: summarizing/analyzing large inputs, drafting a well-specified function or component, bulk transformations, research digestion. Give workers a complete, self-contained brief (`--file` for context) — they see nothing else.
+- **Escalate back up (do it yourself)** when: multi-file/cross-module changes, anything touching auth/session/data/security, ambiguous requirements, design-taste calls, or a worker's output fails review twice. Free workers draft; you decide, review, and ship. Never commit worker output unreviewed.
+- Free-tier limits: 20 req/min, 50 req/day (1,000/day after a one-time $10 credit purchase). If all workers in a chain fail, quota is exhausted or routes changed — fall back to doing it yourself and note it.
+- These are defaults, not limits: judge the output, not the price tag. Escalating costs less than shipping mediocre work.
+
 ## Skills & tooling
 
 This repo carries an AI development environment in `.claude/` with skills, agents, hooks, and automated quality gates. See [USING_THE_SKILLS.md](./.claude/USING_THE_SKILLS.md) for the full guide.

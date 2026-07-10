@@ -1,12 +1,14 @@
 ---
 name: patterns
-description: Discover and apply the project's established design patterns before writing any server function, data query, component, or auth-touching code. Consult when the user runs /patterns, asks "which pattern applies", or before scaffolding any new module.
+description: Discover and apply the project's established design patterns before writing any server function, data query, component, or auth-touching code. Use proactively BEFORE scaffolding any new module, service, validator, or endpoint — and whenever the user runs /patterns, asks "which pattern applies", mentions conventions/exemplars, or requests new backend code.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Design Patterns Reference
 
 Canonical sources: the project's architecture documentation (README, design-patterns docs, and any inline rules). This skill teaches you HOW to find and apply patterns — not what they are today, because the codebase is the living source of truth.
+
+Read `learnings.md` beside this file before starting; append an entry when an exemplar search surprises you (missing exemplar, doc/code disagreement).
 
 ## Governing Principle
 

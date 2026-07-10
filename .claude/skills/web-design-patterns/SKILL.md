@@ -7,6 +7,8 @@ description: Modern web application patterns — route-level data loading, strea
 
 The app-flow rulebook: how data and interaction move through a modern web application. `/patterns` covers server conventions; this skill covers the web layer on top. When both apply, read both.
 
+Read `learnings.md` beside this file before starting; append an entry when a flow rule needed adaptation for this stack.
+
 ## Governing Principle
 
 > **The URL is the source of truth. Every view is linkable, every state is recoverable, every action gives feedback.** Users should never wonder "did that work?" or lose their place.

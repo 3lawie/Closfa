@@ -23,9 +23,13 @@ IDEA ──▶ /system-design ──▶ /patterns ──▶ /web-design-patterns
           constraints)        new code)
 ```
 
-Plus two utility skills available anytime:
+Plus four utility skills available anytime:
 - **`/debug`** — systematic diagnosis: reproduce → isolate → hypothesize → instrument → fix → verify.
 - **`/refactor`** — safe restructuring: discover → diagnose debt → decompose into safe steps → scaffold → instrument.
+- **`/delegate`** — orchestrator-worker routing: send self-contained, token-heavy briefs to free OpenRouter models (`.claude/tools/ask-worker.mjs`), then review their output before it touches the codebase. The model-routing table lives in `CLAUDE.md`.
+- **`/writing-skills`** — meta-skill for authoring any new `.claude` asset; carries the prompt-engineering lexicon and Anthropic's authoring rules in `references/`.
+
+Every skill folder has a `learnings.md` — the skill reads it on load and appends discoveries after real usage. This is the environment's memory: it improves itself as you work.
 
 ## How to phrase requests — the Fable 5 way
 
@@ -65,6 +69,11 @@ Hooks are deterministic — they fire regardless of your phrasing:
 |---|---|---|
 | Any `.ts/.tsx` file edited | `format-on-edit.mjs` | Auto-runs ESLint --fix |
 | Any bash command | `guard-bash.mjs` | Blocks destructive operations (db:push, force-push, rm -rf, curl, deploy, publish) |
-| Claude tries to stop | `verify-on-stop.mjs` | Runs lint + typecheck — blocks completion if errors exist |
+| Any Write/Edit | `guard-writes.mjs` | Blocks edits to protected paths (.env*, .dev.vars, generated migrations, lockfile) |
+| Claude tries to stop | `verify-on-stop.mjs` | Typecheck + lint **scoped to files changed this session** — skips entirely when nothing was edited; blocks completion on new errors |
 | Session starts | `inject-context.mjs` | Injects git branch, recent commits, staged/unstaged changes |
 | Notification event | `notify-done.ps1` | Windows toast notification when attention is needed |
+
+## Delegation — spending intelligence, not tokens
+
+The paid model in your session is the **orchestrator**: it decomposes, briefs, reviews, and ships. Free OpenRouter workers (routing table in `CLAUDE.md`) execute self-contained bulk tasks through `node .claude/tools/ask-worker.mjs`. Setup: create a key at openrouter.ai/keys, set `OPENROUTER_API_KEY`; a one-time $10 credit purchase raises the free cap from 50 to 1,000 requests/day. Rules of thumb: delegate drafting/summarizing/extraction; never delegate auth, security, multi-file refactors, or final design taste; everything a worker returns gets reviewed before it lands.

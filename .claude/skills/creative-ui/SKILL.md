@@ -5,6 +5,8 @@ description: Produce distinctive, accessible UI that belongs to the existing des
 
 # Creative UI
 
+Read `learnings.md` beside this file before starting; append an entry when a design intent line or token decision proved notably right or wrong.
+
 ## Governing Principle
 
 > **Intentional restraint over decorative excess.** Every visual choice serves the product's character. Typography carries the hierarchy, whitespace creates breathing room, motion is earned — never applied for its own sake. The result should feel like a considered design, not a template.

@@ -7,6 +7,8 @@ description: Run the layered review pipeline — architecture, code correctness,
 
 **Orchestrate** the specialized reviewer agents over the target, then **synthesize** ONE merged report. Do not review inline yourself — delegate so each pass has clean, focused context.
 
+Read `learnings.md` beside this file before starting; append an entry when reviewers duplicated, missed a dimension, or a synthesis rule needed changing.
+
 ## Governing Principle
 
 > **Separation of review concerns.** Each reviewer owns one dimension of quality. Overlap is caught at merge time, not by bloating individual reviewers. The same design principles that guided the building do the judging.

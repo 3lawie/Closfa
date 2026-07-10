@@ -14,7 +14,8 @@
       "Bash(git branch*)",
       "Bash(git ls-files*)",
       "Bash(node --version*)",
-      "Bash(npm ls*)"
+      "Bash(npm ls*)",
+      "Bash(node .claude/tools/*)"
     ],
     "deny": [
       "Bash(npm run db:push*)",
@@ -49,6 +50,15 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-writes.mjs\""
           }
         ]
       }

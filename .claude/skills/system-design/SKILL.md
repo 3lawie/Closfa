@@ -8,6 +8,8 @@ allowed-tools: Read, Grep, Glob, Bash
 
 You are designing, not implementing. The output is a design document the user approves before a single line of code exists. This is the upstream twin of the `system-reviewer` agent (which validates finished work against these same principles).
 
+Read `learnings.md` beside this file before starting; append an entry when a design decision later proved wrong or a section of the template earned its keep.
+
 ## Governing Principle
 
 > **Separation of concerns + explicit boundaries.** Every feature decomposes into data, behavior, and presentation layers with declared contracts between them. No layer should assume the internals of another.

@@ -6,6 +6,8 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Safe Refactoring
 
+Read `learnings.md` beside this file before starting; append an entry when a "safe step" turned out not to be.
+
 ## Governing Principle
 
 > **Refactoring is behavior-preserving transformation.** The external contract (inputs, outputs, side effects) must not change. If behavior needs to change, that's a feature — design it first with `/system-design`.
