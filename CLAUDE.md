@@ -39,23 +39,35 @@ Discover these directories to understand the codebase structure:
 - Explain non-obvious decisions when making changes (this repo doubles as a learning project)
 - New code mirrors the closest existing exemplar — when no exemplar fits, propose a pattern before writing
 
+## Delegation mandate (read before acting)
+
+You are the ORCHESTRATOR: think, decompose, brief, review, decide. Producing code/prose/analysis in your own context is the expensive default failure mode — **resist it.** Reasoning and review stay at full power; what moves to workers is the *typing*.
+
+**Before writing anything a worker could produce, delegate it** via `ask-worker.mjs`. Spend your own output only on: briefs & plans, reviewing worker results, and the exceptions below.
+
+**Do it yourself ONLY when:** the same brief failed 3× across workers/providers · it touches auth/security/DB migrations · it needs live multi-file repo navigation (a worker sees only its brief) · it's a final judgment/taste call. Non-crucial questions and first-draft analysis also go to workers.
+
+Review cheaply: check output against the brief's acceptance criteria and the completion marker — don't re-derive the work. Protocol: `/delegate`. Prompting rules: `.claude/skills/delegate/references/worker-prompting.md`.
+
 ## Model routing — orchestrator + free workers
 
-Rankings: higher = better (1–9). The paid Claude model in this session is the ORCHESTRATOR: it plans, decomposes, delegates, reviews, and ships. Free OpenRouter workers do bulk drafting, analysis, and search via `node .claude/tools/ask-worker.mjs` (fallback chains built in; needs `OPENROUTER_API_KEY`).
+The paid Claude model in this session is the ORCHESTRATOR: it plans, decomposes, delegates, reviews, and ships. Free worker models do bulk drafting, analysis, and search via `node .claude/tools/ask-worker.mjs --role <role>` (self-contained briefs; `--file` to attach context).
 
-| model | cost | intelligence | code | design taste | context | use for |
-|---|---|---|---|---|---|---|
-| Claude (this session) | 2 | 9 | 9 | 9 | 200K | decisions, architecture, review, final UI polish, anything shipped |
-| `qwen/qwen3-coder:free` (`--role code`/`design`) | 9 | 7 | 8 | 6 | 1M | code drafts, whole-repo analysis, first-pass UI |
-| `openai/gpt-oss-120b:free` (`--role reason`) | 9 | 7 | 6 | 4 | 131K | reasoning-heavy drafts, analysis, explanations |
-| `nvidia/nemotron-3-ultra-550b:free` (`--role bulk`) | 9 | 6 | 5 | 3 | 1M | bulk read/summarize of logs, docs, large files |
-| `qwen/qwen3-next-80b:free` (`--role general`) | 9 | 5 | 5 | 4 | 262K | general grunt work, structured extraction |
+**Multi-provider fallback.** Each role chains across providers that each have their own free quota, so congestion on one (frequent on OpenRouter's free routes) falls through to another. Set any keys you have; the chain skips providers whose key is unset. Per-endpoint retry with backoff is built in.
+
+| provider | key env | free quota | strength |
+|---|---|---|---|
+| Groq | `GROQ_API_KEY` | ~14,400 req/day | fastest; first choice |
+| Cerebras | `CEREBRAS_API_KEY` | ~1M tokens/day | high throughput / bulk |
+| OpenRouter | `OPENROUTER_API_KEY` | 50/day → 1,000 after one-time $10 top-up | widest model variety |
+| Google AI Studio | `GEMINI_API_KEY` | 1,500 req/day | 1M context, multimodal |
+
+Roles: `--role code` (draft functions/components), `reason` (analysis/tradeoffs), `bulk` (summarize large inputs), `design` (first-pass UI), `general`. Model IDs live in `CHAINS` in the script — re-verify against provider docs if a role 404s.
 
 How to apply:
-- **Delegate down** when the task is: summarizing/analyzing large inputs, drafting a well-specified function or component, bulk transformations, research digestion. Give workers a complete, self-contained brief (`--file` for context) — they see nothing else.
-- **Escalate back up (do it yourself)** when: multi-file/cross-module changes, anything touching auth/session/data/security, ambiguous requirements, design-taste calls, or a worker's output fails review twice. Free workers draft; you decide, review, and ship. Never commit worker output unreviewed.
-- Free-tier limits: 20 req/min, 50 req/day (1,000/day after a one-time $10 credit purchase). If all workers in a chain fail, quota is exhausted or routes changed — fall back to doing it yourself and note it.
-- These are defaults, not limits: judge the output, not the price tag. Escalating costs less than shipping mediocre work.
+- **Delegate down** for: summarizing/analyzing large inputs, drafting a well-specified function or component, bulk transforms, research digestion. The worker sees only your brief — make it self-contained.
+- **Escalate back up (do it yourself)** for: multi-file/cross-module changes, anything touching auth/session/data/security, ambiguous requirements, design-taste calls, or output that fails review twice. Workers draft; you decide, review, ship. Never commit worker output unreviewed.
+- Defaults, not limits: judge the output, not the price tag. Escalating costs less than shipping mediocre work.
 
 ## Skills & tooling
 

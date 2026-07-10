@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Route bulk work to free OpenRouter worker models via .claude/tools/ask-worker.mjs so the paid orchestrator model only plans, reviews, and ships. Use proactively whenever a subtask is self-contained and token-heavy — summarizing large files or logs, drafting a well-specified function/component/schema, bulk analysis or extraction, digesting documentation — or when the user says "delegate", "use a worker", "save tokens", or "use the free models".
+description: Route bulk work to free worker models (Groq/Cerebras/OpenRouter/Gemini) via .claude/tools/ask-worker.mjs so the paid orchestrator model only plans, reviews, and ships. Use proactively whenever a subtask is self-contained and token-heavy — summarizing large files or logs, drafting a well-specified function/component/schema, bulk analysis or extraction, digesting documentation — or when the user says "delegate", "use a worker", "save tokens", or "use the free models".
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
@@ -20,10 +20,10 @@ Orchestrator-worker pattern: the expensive model (you) decomposes and verifies; 
    - `--role bulk` — summarize/extract from large inputs (1M context)
    - `--role design` — first-pass UI markup (you do the taste pass after)
    - `--role general` — everything else mechanical
-2. **Brief** like a spec, not a chat: task + constraints + output format + acceptance criteria, and attach every needed file with `--file`. If the brief needs more than ~3 files of context, the task is too entangled — don't delegate it.
-3. **Dispatch**: `node .claude/tools/ask-worker.mjs --role <role> [--file <path>]... "<brief>"` (long briefs via stdin: end with `-`). Fallback chains and 429 handling are built into the script.
+2. **Brief** per `references/worker-prompting.md`: constraints first, reference files in the middle, the exact ask + output format + acceptance criteria last (fights lost-in-the-middle). Attach files with `--file`; if it needs more than ~3 files of context, it's too entangled to delegate.
+3. **Dispatch**: `node .claude/tools/ask-worker.mjs --role <role> [--file <path>]... "<brief>"` (long briefs via stdin: end with `-`). Multi-provider fallback, per-endpoint retry with backoff, and chain sweeps are built in — a congested provider falls through to the next automatically. Pin one with `--provider <groq|cerebras|openrouter|gemini>` if needed.
 4. **Verify** (chain-of-verification, never skip): read the output as a hostile reviewer — check it against the acceptance criteria, the repo's patterns (`/patterns`), and type-reality. Workers hallucinate imports and APIs; you ground them.
-5. **Integrate or escalate**: apply what survives review, rewrite what doesn't. Two failed rounds on the same brief = stop delegating; do it yourself.
+5. **Integrate or escalate**: apply what survives review, rewrite what doesn't. Confirm the completion marker was present (cheap done-check). Three failed rounds on the same brief = stop delegating; Opus does it.
 
 ## Never delegate
 
