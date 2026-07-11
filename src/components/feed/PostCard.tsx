@@ -236,12 +236,22 @@ function ProgressiveImage({ blurSrc, fullSrc }: { blurSrc: string, fullSrc: stri
 }
 
 // ── PostCard ──────────────────────────────────────────────────
+import { reportContent } from '@/server/actions/Database/services/moderation.service'
+
+const IconReport = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+  </svg>
+)
+
 export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: string }) {
   const [liked, setLiked] = useState(false)
   const [localLikes, setLocalLikes] = useState(post.likes)
   const [expanded, setExpanded] = useState(false)
   const [isDeleted, setIsDeleted] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [showReportDialog, setShowReportDialog] = useState(false)
+  const [reportReason, setReportReason] = useState('')
   const queryClient = useQueryClient()
 
   const author = post.primaryAuthor
@@ -263,6 +273,16 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
     onSuccess: (res) => {
       if (res.ok) { setLiked(res.data.liked); setLocalLikes(res.data.likes) }
     },
+  })
+
+  const reportMutation = useMutation({
+    mutationFn: (reason: string) => 
+      reportContent({ data: { targetType: 'post', targetId: post.postId, reason } }),
+    onSuccess: () => {
+      setShowReportDialog(false)
+      setReportReason('')
+      alert('Post reported successfully. Thank you.')
+    }
   })
 
   function handleLike() {
@@ -323,7 +343,7 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
               <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-s)' }}>
                 {formatRelativeTime(post.publishedAt)}
               </span>
-              {currentUserId === author?.userId && (
+              {currentUserId === author?.userId ? (
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
@@ -332,6 +352,15 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
                   title="Delete post"
                 >
                   <IconTrash />
+                </button>
+              ) : currentUserId && (
+                <button
+                  onClick={() => setShowReportDialog(true)}
+                  className="text-xs flex items-center justify-center p-1.5 rounded-md hover:bg-orange-500/10 text-orange-500 transition-colors"
+                  aria-label="Report post"
+                  title="Report post"
+                >
+                  <IconReport />
                 </button>
               )}
             </div>
@@ -393,6 +422,49 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
           <span>{formatCount(post.views)}</span>
         </div>
       </div>
+      
+      {/* Report Dialog Overlay */}
+      {showReportDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-xl border border-gray-200 dark:border-zinc-800">
+            <h3 className="font-bold text-lg mb-4" style={{ color: 'var(--text-h)' }}>Report Post</h3>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-s)' }}>
+              Why are you reporting this post?
+            </p>
+            <div className="space-y-2 mb-6 text-sm">
+              {['Spam', 'Harassment', 'Hate Speech', 'Graphic Content'].map((reason) => (
+                <label key={reason} className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="reportReason" 
+                    value={reason} 
+                    checked={reportReason === reason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span style={{ color: 'var(--text)' }}>{reason}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setShowReportDialog(false)}
+                className="px-4 py-2 text-sm font-semibold rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800"
+                style={{ color: 'var(--text)' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => reportMutation.mutate(reportReason)}
+                disabled={!reportReason || reportMutation.isPending}
+                className="px-4 py-2 text-sm font-semibold text-white rounded-full bg-red-500 hover:bg-red-600 disabled:opacity-50"
+              >
+                {reportMutation.isPending ? 'Submitting...' : 'Submit Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   )
 }

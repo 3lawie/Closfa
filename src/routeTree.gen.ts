@@ -13,7 +13,10 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as TodoRouteImport } from './routes/Todo'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProfileNicknameRouteImport } from './routes/profile.$nickname'
 import { Route as PostPostIdRouteImport } from './routes/post.$postId'
+import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedModeratorRouteImport } from './routes/_authenticated/moderator'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
@@ -39,10 +42,26 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileNicknameRoute = ProfileNicknameRouteImport.update({
+  id: '/profile/$nickname',
+  path: '/profile/$nickname',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PostPostIdRoute = PostPostIdRouteImport.update({
   id: '/post/$postId',
   path: '/post/$postId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedNotificationsRoute =
+  AuthenticatedNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedModeratorRoute = AuthenticatedModeratorRouteImport.update({
+  id: '/moderator',
+  path: '/moderator',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
@@ -76,7 +95,10 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/create': typeof AuthenticatedCreateRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/moderator': typeof AuthenticatedModeratorRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
   '/post/$postId': typeof PostPostIdRoute
+  '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -87,7 +109,10 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/create': typeof AuthenticatedCreateRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/moderator': typeof AuthenticatedModeratorRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
   '/post/$postId': typeof PostPostIdRoute
+  '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -100,7 +125,10 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/moderator': typeof AuthenticatedModeratorRoute
+  '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/post/$postId': typeof PostPostIdRoute
+  '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -113,7 +141,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/create'
     | '/dashboard'
+    | '/moderator'
+    | '/notifications'
     | '/post/$postId'
+    | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -124,7 +155,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/create'
     | '/dashboard'
+    | '/moderator'
+    | '/notifications'
     | '/post/$postId'
+    | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -136,7 +170,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/_authenticated/create'
     | '/_authenticated/dashboard'
+    | '/_authenticated/moderator'
+    | '/_authenticated/notifications'
     | '/post/$postId'
+    | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -148,6 +185,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   PostPostIdRoute: typeof PostPostIdRoute
+  ProfileNicknameRoute: typeof ProfileNicknameRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
@@ -183,12 +221,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile/$nickname': {
+      id: '/profile/$nickname'
+      path: '/profile/$nickname'
+      fullPath: '/profile/$nickname'
+      preLoaderRoute: typeof ProfileNicknameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/post/$postId': {
       id: '/post/$postId'
       path: '/post/$postId'
       fullPath: '/post/$postId'
       preLoaderRoute: typeof PostPostIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/notifications': {
+      id: '/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/moderator': {
+      id: '/_authenticated/moderator'
+      path: '/moderator'
+      fullPath: '/moderator'
+      preLoaderRoute: typeof AuthenticatedModeratorRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
@@ -231,11 +290,15 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedModeratorRoute: typeof AuthenticatedModeratorRoute
+  AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedModeratorRoute: AuthenticatedModeratorRoute,
+  AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -248,6 +311,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   PostPostIdRoute: PostPostIdRoute,
+  ProfileNicknameRoute: ProfileNicknameRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,

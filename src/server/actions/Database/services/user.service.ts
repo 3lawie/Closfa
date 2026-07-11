@@ -1,9 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
-import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
+import { authMiddleware, optionalAuthMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { updateProfileValidation } from '@/verification/profile.validation'
 import { eq } from 'drizzle-orm'
+import { z } from 'zod'
+import { queries } from '@/server/queries'
 import { createId } from '@paralleldrive/cuid2'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
@@ -68,5 +70,40 @@ export const updateProfile = createServerFn({ method: 'POST' })
     } catch (e) {
       logger.error('updateProfile failed', { userId }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to update profile')
+    }
+  })
+
+export const getUserProfileFn = createServerFn({ method: 'GET' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ nickname: z.string().min(1) }))
+  .handler(async ({ data, context }) => {
+    const { nickname } = data
+    const currentUserId = context.session?.userId
+    
+    // Fetch the user and profile
+    const user = await queries.user.getByNickname(nickname)
+    if (!user) {
+      return null
+    }
+
+    // Fetch the user's posts
+    const posts = await queries.post.getByAuthor(user.userId)
+
+    // Fetch follower and following counts
+    const followers = await db.query.follow.findMany({ where: eq(schema.follow.followedId, user.userId) })
+    const following = await db.query.follow.findMany({ where: eq(schema.follow.followerId, user.userId) })
+
+    const isFollowing = currentUserId 
+      ? followers.some(f => f.followerId === currentUserId)
+      : false
+
+    return {
+      user,
+      posts,
+      stats: {
+        followers: followers.length,
+        following: following.length,
+      },
+      isFollowing,
     }
   })

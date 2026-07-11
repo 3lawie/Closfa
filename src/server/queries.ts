@@ -44,6 +44,12 @@ export const queries = {
         with: { profile: { with: { avatarMedia: true } } },
       }),
 
+    getByNickname: (nickname: string) =>
+      db.query.user.findFirst({
+        where: w({ nickname }),
+        with: { profile: { with: { avatarMedia: true } } },
+      }),
+
     getModeratorProfiles: (userId: string) =>
       db.query.profileMember.findMany({
         where: w({ userId }),
@@ -144,7 +150,16 @@ export const queries = {
         with: {
           primaryAuthor: { with: { profile: { with: { avatarMedia: true } } } },
           media: true,
-          commentsList: true,
+          commentsList: { 
+            orderBy: (c: any, { desc }: any) => [desc(c.createdAt)],
+            with: { 
+              author: { with: { profile: { with: { avatarMedia: true } } } },
+              replies: {
+                orderBy: (r: any, { asc }: any) => [asc(r.createdAt)],
+                with: { author: { with: { profile: { with: { avatarMedia: true } } } } }
+              }
+            } 
+          },
         },
       }),
 
