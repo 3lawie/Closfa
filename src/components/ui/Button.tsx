@@ -8,10 +8,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  primary: 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-500 shadow-sm',
-  secondary: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 shadow-sm',
-  ghost: 'bg-transparent hover:bg-gray-100 text-gray-700 border border-transparent',
-  danger: 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200',
+  primary: 'text-white border border-transparent shadow-sm',
+  secondary: 'bg-transparent text-current shadow-sm',
+  ghost: 'bg-transparent text-current border border-transparent opacity-70 hover:opacity-100',
+  danger: 'bg-red-500 hover:bg-red-600 text-white border border-red-600 shadow-sm',
 }
 
 const sizes = {
@@ -34,12 +34,18 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={cn(
-        'font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2',
+        'font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],
         className,
       )}
+      style={{
+        background: variant === 'primary' ? 'var(--accent)' : undefined,
+        borderColor: variant === 'secondary' ? 'var(--border)' : undefined,
+        color: variant === 'secondary' ? 'var(--text)' : undefined,
+        ...props.style
+      }}
     >
       {loading ? (
         <span className="flex items-center gap-2">

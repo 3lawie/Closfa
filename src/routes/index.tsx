@@ -15,8 +15,9 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { getFeedFn } from "../server/actions/Database/services/feed.service"
-import { Navbar } from '@/components/layout/Navbar'
 import { FeedList } from '@/components/feed/FeedList'
+import { Button } from '@/components/ui/Button'
+import { Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')(({
   loader: async ({ context }) => {
@@ -32,19 +33,59 @@ function HomePage() {
   const { session, firstPage } = Route.useLoaderData()
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: 'var(--bg)' }}
-    >
-      <Navbar session={session} />
+    <div className="min-h-screen p-6 sm:p-8" style={{ background: 'var(--bg)' }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Main Feed Column */}
+        <main className="lg:col-span-2 flex flex-col gap-6">
+          <header className="flex flex-col gap-1 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+            <h1 className="text-3xl font-black tracking-tight" style={{ color: 'var(--text-h)' }}>Home Feed</h1>
+            <p className="text-sm" style={{ color: 'var(--text-s)' }}>Stay up to date with updates around the platform.</p>
+          </header>
+          
+          <div className="rounded-2xl border overflow-hidden shadow-sm" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+            <FeedList
+              session={session}
+              initialFeedPage={firstPage}
+            />
+          </div>
+        </main>
 
-      {/* Feed column — centered, max 680px, matches Navbar width */}
-      <main className="max-w-[680px] mx-auto" style={{ borderInline: '1px solid var(--border)' }}>
-        <FeedList
-          session={session}
-          initialFeedPage={firstPage}
-        />
-      </main>
+        {/* Sidebar Info/Widgets Column */}
+        <aside className="hidden lg:flex flex-col gap-6 lg:col-span-1">
+          {session ? (
+            <div className="p-6 rounded-2xl border shadow-sm flex flex-col gap-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>Welcome back!</h2>
+              <p className="text-sm" style={{ color: 'var(--text)' }}>
+                Share your thoughts, upload media files, and discover what others are sharing.
+              </p>
+              <Link to="/create">
+                <Button className="w-full">+ New Post</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="p-6 rounded-2xl border shadow-sm flex flex-col gap-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>Join Closfa</h2>
+              <p className="text-sm" style={{ color: 'var(--text)' }}>
+                Create an account to follow other users, comment on posts, and publish your own updates.
+              </p>
+              <a href="/api/auth/login">
+                <Button className="w-full">Log In</Button>
+              </a>
+            </div>
+          )}
+
+          <div className="p-6 rounded-2xl border shadow-sm flex flex-col gap-3" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+            <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-s)' }}>Platform Guidelines</h3>
+            <ul className="text-xs space-y-2" style={{ color: 'var(--text)' }}>
+              <li>• Be respectful and constructive.</li>
+              <li>• Do not post copyrighted media without permissions.</li>
+              <li>• Report content that violates guidelines.</li>
+            </ul>
+          </div>
+        </aside>
+
+      </div>
     </div>
   )
 }

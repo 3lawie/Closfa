@@ -4,14 +4,14 @@ import type { SessionData } from '@/server/lib/session'
 export function Navbar({ session }: { session: SessionData | null }) {
   return (
     <nav
-      className="sticky top-0 z-50 border-b"
+      className="sticky top-0 z-50 border-b backdrop-blur-md"
       style={{
-        background: 'var(--surface)',
+        background: 'var(--surface-translucent, rgba(255, 255, 255, 0.75))',
         borderColor: 'var(--border)',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      <div className="max-w-[680px] mx-auto px-4 h-14 flex justify-between items-center">
+      <div className="max-w-[680px] mx-auto px-4 h-16 flex justify-between items-center">
         {/* Logo — amber brand */}
         <Link
           to="/"
@@ -26,36 +26,43 @@ export function Navbar({ session }: { session: SessionData | null }) {
             <>
               <Link
                 to="/create"
-                className="text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                className="text-sm font-semibold px-4 py-2 rounded-full transition-all duration-200"
                 style={{ color: 'var(--accent)', background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
                 activeProps={{ style: { color: 'white', background: 'var(--accent)' } }}
               >
-                + New post
+                + New Post
               </Link>
 
               <Link
                 to="/dashboard"
-                className="text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                className="text-sm font-semibold px-3 py-2 rounded-full transition-all duration-200"
                 style={{ color: 'var(--text)' }}
                 activeProps={{ style: { color: 'var(--accent)', background: 'var(--accent-bg)' } }}
               >
                 Dashboard
               </Link>
 
-              {/* Avatar chip */}
+              {/* Notifications Button */}
+              <Link
+                search={(prev) => ({ ...prev, notifications: true })}
+                className="relative text-sm font-semibold p-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800/60 transition-colors"
+                style={{ color: 'var(--text)' }}
+              >
+                🔔
+              </Link>
+
+              {/* Logout/Profile Avatar */}
               <a
                 href="/api/auth/logout"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ color: 'var(--text)', background: 'var(--social-bg)', border: '1px solid var(--border)' }}
+                className="flex items-center gap-2 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800/60 transition-colors"
+                title="Log out"
               >
                 <span
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm"
                   style={{ background: 'var(--accent)' }}
                 >
                   {session.name.charAt(0).toUpperCase()}
                 </span>
-                <span className="hidden sm:block">{session.nickname}</span>
-                <span className="text-xs" style={{ color: 'var(--text-s)' }}>↩</span>
               </a>
             </>
           ) : (

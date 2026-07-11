@@ -1,5 +1,6 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
+import { Button } from '@/components/ui/Button'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toggleLike } from '@/server/actions/Database/services/like.service'
 import { deletePost } from '@/server/actions/Database/services/post.service'
@@ -252,6 +253,7 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
   const [isPending, startTransition] = useTransition()
   const [showReportDialog, setShowReportDialog] = useState(false)
   const [reportReason, setReportReason] = useState('')
+  const [reportDetails, setReportDetails] = useState('')
   const queryClient = useQueryClient()
 
   const author = post.primaryAuthor
@@ -276,11 +278,12 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
   })
 
   const reportMutation = useMutation({
-    mutationFn: (reason: string) => 
-      reportContent({ data: { targetType: 'post', targetId: post.postId, reason } }),
+    mutationFn: (data: { reason: string, details?: string }) => 
+      reportContent({ data: { targetType: 'post', targetId: post.postId, reason: data.reason, details: data.details } }),
     onSuccess: () => {
       setShowReportDialog(false)
       setReportReason('')
+      setReportDetails('')
       alert('Post reported successfully. Thank you.')
     }
   })
@@ -292,30 +295,22 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
 
   const deleteMutation = useMutation({
     mutationFn: () => deletePost({ data: { postId: post.postId } }),
-    onSuccess: (res) => {
-      if (res.ok) {
-        queryClient.invalidateQueries({ queryKey: ['feed'] })
-      } else {
-        alert(res.message)
-      }
+    onSuccess: () => {
+      // Revalidate feed
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
     },
-    onError: (err) => {
-      setIsDeleted(false) // Rollback optimistic deletion
-      alert(err.message || 'Failed to delete post')
+    onError: () => {
+      alert('Failed to delete post.')
     }
   })
 
   function handleDelete() {
-    if (deleteMutation.isPending || isPending) return
-    if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-      startTransition(() => {
-        setIsDeleted(true)
-      })
-      deleteMutation.mutate()
-    }
+    if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) return
+    deleteMutation.mutate()
   }
 
-  if (isDeleted) return null
+  // If the post was deleted (server confirmed), don't render it
+  if (deleteMutation.isSuccess) return null
 
   return (
     <article className="px-4 py-4 border-b transition-colors" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -344,24 +339,30 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
                 {formatRelativeTime(post.publishedAt)}
               </span>
               {currentUserId === author?.userId ? (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={handleDelete}
-                  disabled={deleteMutation.isPending}
-                  className="text-xs flex items-center justify-center p-1.5 rounded-md hover:bg-red-500/10 text-red-500 transition-colors"
+                  isPending={deleteMutation.isPending}
+                  className="p-1.5 opacity-40 hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-md transition-all"
+                  style={{ color: 'var(--text)' }}
                   aria-label="Delete post"
                   title="Delete post"
                 >
                   <IconTrash />
-                </button>
+                </Button>
               ) : currentUserId && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setShowReportDialog(true)}
-                  className="text-xs flex items-center justify-center p-1.5 rounded-md hover:bg-orange-500/10 text-orange-500 transition-colors"
+                  className="p-1.5 opacity-30 hover:opacity-100 hover:bg-orange-500/10 hover:text-orange-500 rounded-md transition-all"
+                  style={{ color: 'var(--text)' }}
                   aria-label="Report post"
                   title="Report post"
                 >
                   <IconReport />
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -407,7 +408,11 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
           <span>{formatCount(localLikes)}</span>
         </button>
 
-        <Link to="/post/$postId" params={{ postId: post.postId }} className="flex items-center gap-1.5 text-xs font-medium opacity-60 hover:opacity-100 transition-opacity px-2 py-1" style={{ color: 'var(--text)' }}>
+        <Link 
+          search={(prev) => ({ ...prev, post: post.postId })} 
+          className="flex items-center gap-1.5 text-xs font-medium opacity-60 hover:opacity-100 transition-opacity px-2 py-1 cursor-pointer" 
+          style={{ color: 'var(--text)' }}
+        >
           <IconComment />
           <span>{formatCount(post.comments)}</span>
         </Link>
@@ -446,21 +451,34 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
                 </label>
               ))}
             </div>
+            
+            {reportReason && (
+              <div className="mb-6">
+                <textarea
+                  placeholder="Additional details (optional)..."
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  className="w-full h-24 p-3 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-none"
+                  style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                />
+              </div>
+            )}
+            
             <div className="flex gap-3 justify-end">
-              <button 
+              <Button 
+                variant="ghost"
                 onClick={() => setShowReportDialog(false)}
-                className="px-4 py-2 text-sm font-semibold rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800"
-                style={{ color: 'var(--text)' }}
               >
                 Cancel
-              </button>
-              <button 
-                onClick={() => reportMutation.mutate(reportReason)}
-                disabled={!reportReason || reportMutation.isPending}
-                className="px-4 py-2 text-sm font-semibold text-white rounded-full bg-red-500 hover:bg-red-600 disabled:opacity-50"
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={() => reportMutation.mutate({ reason: reportReason, details: reportDetails })}
+                disabled={!reportReason}
+                isPending={reportMutation.isPending}
               >
-                {reportMutation.isPending ? 'Submitting...' : 'Submit Report'}
-              </button>
+                Submit Report
+              </Button>
             </div>
           </div>
         </div>

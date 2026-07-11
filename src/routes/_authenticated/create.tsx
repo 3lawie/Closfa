@@ -100,22 +100,25 @@ function CreatePost() {
                 {/* Header Section */}
                 <div className="mb-6 flex items-center justify-between">
                     <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-h)' }}>Create Post</h1>
-                    <button
+                    <Button
                         onClick={handlePublish}
-                        disabled={status === 'uploading'}
-                        className="text-white px-5 py-2 rounded-full font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60"
-                        style={{ backgroundColor: 'var(--accent)' }}
+                        isPending={status === 'uploading'}
+                        className="px-6 py-2"
                     >
-                        {status === 'uploading' ? 'Publishing…' : 'Publish'}
-                    </button>
+                        Publish
+                    </Button>
                 </div>
 
                 {/* Status messages */}
                 {status === 'error' && (
-                    <p className="mb-4 text-sm text-red-600">{errorMessage}</p>
+                    <div className="mb-6 p-4 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 dark:bg-red-950/20 dark:border-red-900/30 dark:text-red-400">
+                        {errorMessage}
+                    </div>
                 )}
                 {status === 'success' && (
-                    <p className="mb-4 text-sm text-emerald-600">Post published successfully!</p>
+                    <div className="mb-6 p-4 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400">
+                        Post published successfully!
+                    </div>
                 )}
 
                 {/* Main Composer Card */}

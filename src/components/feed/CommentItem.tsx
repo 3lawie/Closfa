@@ -1,9 +1,26 @@
 import { useState } from 'react'
 import { formatRelativeTime } from '@/lib/utils/format'
 import { Link } from '@tanstack/react-router'
+import { Button } from '@/components/ui/Button'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { deleteComment } from '@/server/actions/Database/services/comment.service'
 
 export function CommentItem({ comment, currentUserId }: { comment: any, currentUserId?: string }) {
   const [showReplyForm, setShowReplyForm] = useState(false)
+  const queryClient = useQueryClient()
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteComment({ data: { commentId: comment.comment_id } }),
+    onSuccess: () => {
+      // Re-fetch post query to get updated comments
+      queryClient.invalidateQueries({ queryKey: ['post', comment.postId] })
+    },
+    onError: () => {
+      alert('Failed to delete comment')
+    }
+  })
+
+  if (deleteMutation.isSuccess) return null
   
   return (
     <div className="py-4 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
@@ -49,9 +66,19 @@ export function CommentItem({ comment, currentUserId }: { comment: any, currentU
             </button>
             
             {currentUserId === comment.author?.userId && (
-              <button className="hover:text-red-500 opacity-70 transition-colors ml-auto">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => {
+                  if (confirm('Delete this comment? This cannot be undone.')) {
+                    deleteMutation.mutate()
+                  }
+                }}
+                isPending={deleteMutation.isPending}
+                className="hover:text-red-500 opacity-70 transition-colors ml-auto p-1 text-xs h-auto"
+              >
                 Delete
-              </button>
+              </Button>
             )}
           </div>
           
@@ -63,9 +90,9 @@ export function CommentItem({ comment, currentUserId }: { comment: any, currentU
                   className="flex-1 text-sm px-3 py-1.5 rounded-full bg-transparent border outline-none focus:ring-1 focus:ring-opacity-50"
                   style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--surface)' }}
                 />
-                <button className="px-3 py-1.5 rounded-full text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+                <Button size="sm">
                   Reply
-                </button>
+                </Button>
              </div>
           )}
           

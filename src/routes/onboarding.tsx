@@ -12,6 +12,7 @@ import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
 import { verifyTurnstileToken } from '@/server/lib/turnstile'
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
+import { Button } from '@/components/ui/Button'
 
 export const claimNicknameFn = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
@@ -98,61 +99,90 @@ function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold" style={{ color: 'var(--text-h)' }}>
-          Choose your nickname
-        </h2>
-        <p className="mt-2 text-center text-sm" style={{ color: 'var(--text-s)' }}>
-          This is how others will see you on the platform.
-        </p>
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2" style={{ backgroundColor: 'var(--bg)' }}>
+      
+      {/* Left Column - Visual Branding Pane */}
+      <div 
+        className="hidden lg:flex flex-col justify-between p-12 text-white relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%)',
+        }}
+      >
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-500 via-violet-600 to-zinc-950" />
+        
+        <div className="relative z-10">
+          <span className="text-2xl font-black tracking-tight" style={{ color: 'var(--brand)' }}>
+            Closfa.
+          </span>
+        </div>
+
+        <div className="relative z-10 flex flex-col gap-4 max-w-md">
+          <h1 className="text-4xl font-extrabold tracking-tight leading-tight text-white m-0">
+            A quiet space to discover and share.
+          </h1>
+          <p className="text-sm opacity-80 leading-relaxed">
+            Closfa is designed from zero with a rest-mode aesthetic, bringing you a clean, distraction-free environment to read, write, and engage with media.
+          </p>
+        </div>
+
+        <div className="relative z-10 text-xs opacity-50">
+          &copy; 2026 Closfa Inc. All rights reserved.
+        </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="py-8 px-4 shadow sm:rounded-lg sm:px-10" style={{ backgroundColor: 'var(--surface)' }}>
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="nickname" className="block text-sm font-medium" style={{ color: 'var(--text-h)' }}>
-                Nickname
-              </label>
-              <div className="mt-1">
+      {/* Right Column - Nickname Claim Form */}
+      <div className="flex flex-col justify-center py-12 px-6 sm:px-12 lg:px-16" style={{ background: 'var(--bg)' }}>
+        <div className="mx-auto w-full max-w-sm">
+          <div className="mb-8">
+            <h2 className="text-3xl font-extrabold tracking-tight" style={{ color: 'var(--text-h)' }}>
+              Choose your nickname
+            </h2>
+            <p className="mt-2 text-sm" style={{ color: 'var(--text-s)' }}>
+              Set up your handle to publish and interact on Closfa.
+            </p>
+          </div>
+
+          <div className="py-8 px-6 rounded-2xl border shadow-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <div>
+                <label htmlFor="nickname" className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-h)' }}>
+                  Nickname
+                </label>
                 <input
                   id="nickname"
                   name="nickname"
                   type="text"
                   required
+                  placeholder="e.g. janesmith"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   style={{ backgroundColor: 'var(--bg)', color: 'var(--text-h)', borderColor: 'var(--border)' }}
-                  className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm"
+                  className="appearance-none block w-full px-4 py-3 border rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition-all text-sm"
                 />
               </div>
-            </div>
 
-            {/* Bot check — renders only when VITE_TURNSTILE_SITE_KEY is set;
-                the server fails closed in production without a valid token. */}
-            <TurnstileWidget
-              onVerify={setTurnstileToken}
-              onExpire={() => setTurnstileToken(undefined)}
-            />
+              {/* Bot check */}
+              <TurnstileWidget
+                onVerify={setTurnstileToken}
+                onExpire={() => setTurnstileToken(undefined)}
+              />
 
-            {error && (
-              <div className="text-red-600 text-sm">{error}</div>
-            )}
+              {error && (
+                <div className="text-red-500 text-xs font-medium">{error}</div>
+              )}
 
-            <div>
-              <button
+              <Button
                 type="submit"
-                disabled={loading}
-                style={{ backgroundColor: 'var(--brand)', color: 'white' }}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
+                isPending={loading}
+                className="w-full py-3"
               >
-                {loading ? 'Saving...' : 'Continue'}
-              </button>
-            </div>
-          </form>
+                Continue
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
+
     </div>
   )
 }
