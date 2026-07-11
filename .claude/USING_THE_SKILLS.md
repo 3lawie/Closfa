@@ -8,7 +8,7 @@ How the skills, agents, and hooks work together — and how to phrase requests s
 | :--- | :--- | :--- |
 | `CLAUDE.md` (repo root) | Always | Invariants — stack, commands, architecture rules, layout |
 | **Skills** (`.claude/skills/`) | When their `description` matches the task | Principles and procedures — how to design, build, debug, review, refactor, learn |
-| **Agents** (`.claude/agents/`) | When spawned (by `/full-review`) | Isolated reviewers with clean context and focused scope |
+| **Agents** (`.claude/agents/` + global `~/.claude/agents/`) | When spawned (by `/full-review`, or explicitly) | Isolated reviewers with clean context and focused scope. `worker-manager` (global, Sonnet) is the odd one out — it manages `ask-worker.mjs` retries/verification for delegable tasks too big for a single call, not a reviewer |
 | **Hooks** (`.claude/hooks/` + `settings.json`) | Automatically, every matching lifecycle event | Deterministic guarantees: auto-format on edit, destructive commands blocked, lint+typecheck on stop, context injected at session start, notifications on completion |
 
 ## The skill catalog
@@ -76,4 +76,4 @@ Hooks are deterministic — they fire regardless of your phrasing:
 
 ## Delegation — spending intelligence, not tokens
 
-The paid model in your session is the **orchestrator**: it decomposes, briefs, reviews, and ships. Free OpenRouter workers (routing table in `CLAUDE.md`) execute self-contained bulk tasks through `node .claude/tools/ask-worker.mjs`. Setup: create a key at openrouter.ai/keys, set `OPENROUTER_API_KEY`; a one-time $10 credit purchase raises the free cap from 50 to 1,000 requests/day. Rules of thumb: delegate drafting/summarizing/extraction; never delegate auth, security, multi-file refactors, or final design taste; everything a worker returns gets reviewed before it lands.
+The paid model in your session is the **orchestrator**: it decomposes, briefs, reviews, and ships. Free workers (Groq/Cerebras/OpenRouter/Gemini — set whichever keys you have) execute self-contained bulk tasks through `node .claude/tools/ask-worker.mjs`. For a task likely to need multiple rebrief/retry cycles rather than one clean call, the orchestrator can spawn the `worker-manager` subagent instead — it runs the same dispatch-verify-rebrief loop in an isolated context and returns one reviewed result. Subagents can only run on Claude models (there's no way to make a subagent itself *be* Groq/Cerebras/OpenRouter); `worker-manager` is a Sonnet wrapper around worker calls, not a worker. Full rules (what to delegate, what never to delegate, the routing table, the three delegation lanes, escalation) live in root `CLAUDE.md`'s Delegation mandate — this is just the pointer.

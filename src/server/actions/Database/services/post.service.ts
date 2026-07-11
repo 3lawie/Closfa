@@ -6,6 +6,8 @@ import { schema } from '@/server/db/schema'
 import { queries } from '@/server/queries'
 import { verifyIsOwner } from '../verifiers/auth'
 import { eq } from 'drizzle-orm'
+import { ok, err, type ServerResult } from '@/server/lib/result'
+import { logger } from '@/server/lib/logger'
 
 /** Fetch a single post for the detail route. Public (guests and users). */
 const getPostInput = z.object({ postId: z.string().min(1) })
@@ -15,45 +17,6 @@ export const getPostFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const post = await queries.post.getById(data.postId)
     return post ?? null
-  })
-
-const legacyCreatePostInput = z.object({
-  content: z.string().max(5000).optional(),
-  category: z.string().min(1),
-  status: z.enum(['draft', 'published']).optional(),
-  mediaIds: z.array(z.string().min(1)).max(10).optional(),
-})
-
-export const createPost = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware, rateLimiterMiddleWare])
-  .inputValidator(legacyCreatePostInput)
-  .handler(async ({ data, context }) => {
-    const { userId } = context.session
-    const postData = data
-
-    // 2. Execute
-    const [newPost] = await db.insert(schema.post)
-      .values({
-        content: postData.content,
-        author_id: userId,
-        post_category: postData.category,
-        post_status: postData.status || 'published',
-        is_published: postData.status === 'published',
-        published_at: postData.status === 'published' ? new Date() : null,
-      })
-      .returning({ postId: schema.post.postId })
-
-    // Link media if any
-    if (postData.mediaIds && postData.mediaIds.length > 0) {
-      await db.insert(schema.postToMedia).values(
-        postData.mediaIds.map((mediaId: string) => ({
-          post_id: newPost.postId,
-          media_id: mediaId,
-        }))
-      )
-    }
-
-    return { success: true, postId: newPost.postId }
   })
 
 /** Validated create-post input — content and/or up to 10 media items. */
@@ -79,7 +42,6 @@ const createPostInput = z
   .refine((d) => !!d.content?.trim() || d.media.length > 0, {
     message: 'Add some text or at least one media item',
   })
-type CreatePostInput = z.infer<typeof createPostInput>
 
 /**
  * Create a post with optional media. The client uploads each file to ImageKit
@@ -89,7 +51,7 @@ type CreatePostInput = z.infer<typeof createPostInput>
 export const createPostWithMedia = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
   .inputValidator(createPostInput)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: string }>> => {
     const { userId } = context.session
     const { content, media } = data
 
@@ -139,38 +101,76 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
         )
       }
 
-      return { ok: true, data: { postId: postRow.postId } }
-    } catch (err) {
-      console.error('[createPostWithMedia] Failed:', err)
-      return { ok: false, error: 'INTERNAL_ERROR', message: 'Failed to create post' }
+      return ok({ postId: postRow.postId })
+    } catch (e) {
+      logger.error('createPostWithMedia failed', { userId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to create post')
     }
   })
 
 export const deletePost = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
   .inputValidator(z.object({ postId: z.string().min(1) }))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: string }>> => {
     const { userId } = context.session
     const { postId } = data
 
-    // 1. Verify
-    const post = await db.query.post.findFirst({
-      where: { postId } as any,
-    })
+    try {
+      const post = await queries.post.getById(postId)
 
-    if (!post) {
-      throw new Error('Post not found')
+      if (!post) {
+        return err('NOT_FOUND', 'Post not found')
+      }
+
+      const ownershipCheck = verifyIsOwner(userId, post.author_id)
+      if (!ownershipCheck.ok) {
+        // Only the owner may delete here; moderator removal lives in moderation.service.
+        return err('FORBIDDEN', ownershipCheck.message)
+      }
+
+      // First delete all child records to satisfy foreign key constraints
+      await db.delete(schema.commentReply).where(eq(schema.commentReply.post_id, postId))
+      await db.delete(schema.comment).where(eq(schema.comment.postId, postId))
+      await db.delete(schema.postLike).where(eq(schema.postLike.postId, postId))
+      await db.delete(schema.postToCategory).where(eq(schema.postToCategory.post_id, postId))
+      await db.delete(schema.postToUser).where(eq(schema.postToUser.post_id, postId))
+      await db.delete(schema.postToMedia).where(eq(schema.postToMedia.post_id, postId))
+
+      // Now delete the post itself
+      await db.delete(schema.post).where(eq(schema.post.postId, postId))
+
+      // Delete media records and ImageKit files
+      if (post.media && post.media.length > 0) {
+        const privateKey = process.env.IMAGEKIT_PRIVATE_KEY
+        if (privateKey) {
+          const ikAuth = Buffer.from(`${privateKey}:`).toString('base64')
+          for (const m of post.media) {
+            // Delete from our database
+            await db.delete(schema.media).where(eq(schema.media.media_id, m.media_id))
+            
+            // Try to delete from ImageKit
+            try {
+              const searchUrl = `https://api.imagekit.io/v1/files?searchQuery=name="${m.fileName}"`
+              const searchRes = await fetch(searchUrl, { headers: { Authorization: `Basic ${ikAuth}` } })
+              if (searchRes.ok) {
+                const data = await searchRes.json()
+                for (const file of data) {
+                  await fetch(`https://api.imagekit.io/v1/files/${file.fileId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Basic ${ikAuth}` }
+                  })
+                }
+              }
+            } catch (err) {
+              logger.warn(`Failed to delete media from ImageKit: ${m.fileName}`, { postId }, err instanceof Error ? err : undefined)
+            }
+          }
+        }
+      }
+
+      return ok({ postId })
+    } catch (e) {
+      logger.error('deletePost failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to delete post')
     }
-
-    const ownershipCheck = verifyIsOwner(userId, post.author_id)
-    if (!ownershipCheck.ok) {
-      // Allow if they are a moderator (handled in moderation.service)
-      // Here we only allow the owner
-      throw new Error(ownershipCheck.message)
-    }
-
-    // 2. Execute
-    await db.delete(schema.post).where(eq(schema.post.postId, postId))
-
-    return { success: true }
   })

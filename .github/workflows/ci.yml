@@ -1,0 +1,39 @@
+name: CI
+on:
+  # Push builds only on long-lived branches; PRs from any branch get the full run
+  # (avoids double-running a job for same-repo PR branches).
+  push:
+    branches: ["main", "ai"]
+  pull_request:
+    branches: ["**"]
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    # Placeholder client env so any test that transitively imports client-env.ts
+    # (which fails closed at module load without these) doesn't break CI. These
+    # are public-by-design client config, not secrets.
+    env:
+      VITE_PUBLIC_IMAGEKIT_PUBLIC_KEY: "ci-placeholder"
+      VITE_PUBLIC_IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/ci"
+      VITE_PUBLIC_AUTH0_DOMAIN: "ci-placeholder.auth0.com"
+      VITE_PUBLIC_AUTH0_CLIENT_ID: "ci-placeholder"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      # Hard gates: typecheck + tests must pass.
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Test
+        run: npm run test
+      # Lint is currently non-blocking: the repo carries ~21 pre-existing lint
+      # errors (mostly documented Drizzle-beta `as any` casts). Flip to a hard
+      # gate once that backlog is cleared so new violations can't sneak in.
+      - name: Lint (non-blocking until backlog cleared)
+        run: npm run lint
+        continue-on-error: true

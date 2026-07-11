@@ -1,6 +1,5 @@
 import { useState } from "react"
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router"
-import { getSession } from "@/server/lib/session"
+import { createFileRoute, useRouter } from "@tanstack/react-router"
 import { MediaContatiner } from "@/components/Dahsboard/MediaContatiner"
 import { loadAllMedias, clearAllMedias } from "@/lib/utils/mediaDB"
 import { getImageKitAuth } from "@/server/actions/ThirdParty/ImageKit/imagekit.service"
@@ -9,14 +8,8 @@ import { upload } from "@imagekit/react"
 import { clientEnv } from "@/lib/env/client-env"
 
 export const Route = createFileRoute('/_authenticated/create')({
-    loader: async () => {
-        // Session is already guaranteed by _authenticated layout
-        const result = await getSession()
-        if (!result.session) {
-            throw redirect({ to: '/onboarding' })
-        }
-        return { session: result.session }
-    },
+    // No loader: session is guaranteed by _authenticated's beforeLoad and read
+    // from route context — the previous loader re-decrypted it for no benefit.
     component: CreatePost,
 })
 
@@ -24,7 +17,7 @@ function CreatePost() {
     const [content, setContent] = useState("")
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
     const [errorMessage, setErrorMessage] = useState("")
-    const { session } = Route.useLoaderData()
+    const { session } = Route.useRouteContext()
     const router = useRouter()
 
     const handlePublish = async () => {
@@ -57,7 +50,7 @@ function CreatePost() {
                         fileName: m.fileName,
                     },
                 })
-                const { url } = await upload({
+                const response = await upload({
                     file: m.blob,
                     fileName: m.fileName,
                     token: auth.token,
@@ -65,10 +58,10 @@ function CreatePost() {
                     expire: auth.expire,
                     publicKey: clientEnv.imagekitPublicKey,
                 })
-                if (!url) throw new Error(`Upload failed for ${m.fileName}`)
+                if (!response?.filePath) throw new Error(`Upload failed for ${m.fileName}`)
                 const { mediaType, fileName, mimeType, fileSize, width, height, duration } = m.metadata.originalMedia
                 media.push({
-                    mediaUrl: url,
+                    mediaUrl: response.filePath.replace(/^\//, ""),
                     mediaType,
                     fileName,
                     mimeType,

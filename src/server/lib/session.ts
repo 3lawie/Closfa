@@ -75,7 +75,8 @@ export type SessionResult = z.infer<typeof SessionResult>
 // Cookie + crypto settings
 // ──────────────────────────────────────────────────────────────
 const COOKIE_NAME = 'closfa_session'
-const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7 // 7 days
+export { evaluateSessionPayload, SESSION_DURATION_SECONDS } from './session.rules'
+import { evaluateSessionPayload, SESSION_DURATION_SECONDS } from './session.rules'
 
 /**
  * Derive a 32-byte key from SESSION_SECRET using TextEncoder.
@@ -132,20 +133,14 @@ export const getSession = createServerFn({ method: "GET" })
       const session = payload as unknown as SessionData
       const now = Math.floor(Date.now() / 1000)
 
-      // Absolute cap: 30 days
-      if (now - session.issuedAt > 30 * 24 * 60 * 60) {
+      // Absolute cap / expiry / sliding-window decision — pure, unit-tested.
+      const verdict = evaluateSessionPayload(session, now)
+
+      if (verdict === 'expired') {
         return { session: null, status: 'expired' }
       }
 
-      if (session.expiresAt < now) {
-        return { session: null, status: 'expired' }
-      }
-
-      // Sliding window renewal logic
-      const timeRemaining = session.expiresAt - now
-      const threshold = SESSION_DURATION_SECONDS * 0.25
-
-      if (timeRemaining < threshold) {
+      if (verdict === 'renew') {
         // renew session silently
         await createSession({
           sessionData: session,

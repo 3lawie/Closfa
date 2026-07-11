@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toggleLike } from '@/server/actions/Database/services/like.service'
+import { deletePost } from '@/server/actions/Database/services/post.service'
 import { cn } from '@/lib/utils/cn'
 import { formatRelativeTime, formatCount } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
@@ -54,6 +55,14 @@ function IconVerified() {
   )
 }
 
+function IconTrash() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-[16px] h-[16px]" aria-hidden>
+      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // ── Avatar ────────────────────────────────────────────────────
 function Avatar({ author }: { author: PostAuthor }) {
   const avatarMedia = author.profile?.avatar
@@ -73,10 +82,12 @@ function Avatar({ author }: { author: PostAuthor }) {
 
   return (
     <div
-      className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 select-none"
+      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 select-none overflow-hidden"
       style={{ background: 'var(--accent-bg)', color: 'var(--accent)', border: '1.5px solid var(--accent-border)' }}
     >
-      {initial}
+      <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor">
+        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+      </svg>
     </div>
   )
 }
@@ -86,9 +97,9 @@ function MediaGrid({ media }: { media: Media[] }) {
   if (!media.length) return null
 
   const IK = clientEnv.imagekitUrlEndpoint
-  const images = media.filter((m: Media) => m.mediaType === 'image')
-  const videos = media.filter((m: Media) => m.mediaType === 'video')
-  const audios = media.filter((m: Media) => m.mediaType === 'audio')
+  const images = media.filter((m: any) => m.media_type === 'image')
+  const videos = media.filter((m: any) => m.media_type === 'video')
+  const audios = media.filter((m: any) => m.media_type === 'audio')
 
   const displayMedia = [...videos.slice(0, 1), ...images.slice(0, 4)].slice(0, 4)
 
@@ -104,10 +115,10 @@ function MediaGrid({ media }: { media: Media[] }) {
             displayMedia.length === 4 && 'grid-cols-2',
           )}
         >
-          {displayMedia.map((m: Media, i: number) => {
-            if (m.mediaType === 'video') {
+          {displayMedia.map((m: any, i: number) => {
+            if (m.media_type === 'video') {
               return (
-                <div key={m.mediaUrl} className="relative bg-black aspect-video rounded-xl overflow-hidden">
+                <div key={m.mediaUrl} className="relative bg-black aspect-video overflow-hidden" style={displayMedia.length === 1 ? { borderRadius: '0.75rem', border: '1px solid var(--border)' } : {}}>
                   <video
                     src={`${IK}/${m.mediaUrl}`}
                     className="w-full h-full object-contain"
@@ -118,27 +129,30 @@ function MediaGrid({ media }: { media: Media[] }) {
               )
             }
 
-            const transforms = displayMedia.length === 1 ? 'tr:w-600,c-at_max,f-avif' : 'tr:w-300,h-300,c-at_max,f-avif'
+            const transforms = displayMedia.length === 1 ? 'tr:w-800,c-at_max,f-avif' : 'tr:w-400,h-400,c-at_max,f-avif'
             const src = `${IK}/${transforms}/${m.mediaUrl}`
 
             return (
               <div
                 key={m.mediaUrl}
                 className={cn(
-                  'overflow-hidden',
-                  displayMedia.length === 1 ? 'rounded-xl max-h-[420px]' : '',
+                  'overflow-hidden relative flex items-center justify-center',
+                  displayMedia.length === 1 ? 'max-h-[500px]' : '',
                   displayMedia.length === 3 && i === 0 ? 'row-span-2' : '',
                 )}
-                style={displayMedia.length > 1 ? { aspectRatio: '1 / 1' } : {}}
+                style={{
+                  background: 'var(--border)',
+                  ...(displayMedia.length > 1 ? { aspectRatio: '1 / 1' } : { border: '1px solid var(--border)', borderRadius: '0.75rem' })
+                }}
               >
-                <img src={src} alt="" loading="lazy" className="w-full h-full object-cover" />
+                <img src={src} alt="" loading="lazy" className="w-full h-full object-cover transition-opacity duration-300" />
               </div>
             )
           })}
         </div>
       )}
 
-      {audios.map((a: Media) => (
+      {audios.map((a: any) => (
         <audio
           key={a.mediaUrl}
           src={`${IK}/${a.mediaUrl}`}
@@ -152,12 +166,13 @@ function MediaGrid({ media }: { media: Media[] }) {
 }
 
 // ── PostCard ──────────────────────────────────────────────────
-export function PostCard({ post }: { post: Post }) {
+export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: string }) {
   const [liked, setLiked] = useState(false)
   const [localLikes, setLocalLikes] = useState(post.likes)
   const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
 
-  const author = post.author
+  const author = post.primaryAuthor
   const isLong = (post.content?.length ?? 0) > 280
 
   // Optimistic like: flip immediately, reconcile with the server's authoritative
@@ -183,6 +198,27 @@ export function PostCard({ post }: { post: Post }) {
     likeMutation.mutate()
   }
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deletePost({ data: { postId: post.postId } }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ['feed'] })
+      } else {
+        alert(res.message)
+      }
+    },
+    onError: (err) => {
+      alert(err.message || 'Failed to delete post')
+    }
+  })
+
+  function handleDelete() {
+    if (deleteMutation.isPending) return
+    if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+      deleteMutation.mutate()
+    }
+  }
+
   return (
     <article className="px-4 py-4 border-b transition-colors" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       {/* Header */}
@@ -205,9 +241,22 @@ export function PostCard({ post }: { post: Post }) {
                 </span>
               )}
             </div>
-            <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-s)' }}>
-              {formatRelativeTime(post.publishedAt)}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-s)' }}>
+                {formatRelativeTime(post.publishedAt)}
+              </span>
+              {currentUserId === author?.userId && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="text-xs flex items-center justify-center p-1.5 rounded-md hover:bg-red-500/10 text-red-500 transition-colors"
+                  aria-label="Delete post"
+                  title="Delete post"
+                >
+                  <IconTrash />
+                </button>
+              )}
+            </div>
           </div>
           {author?.nickname && (
             <span className="text-xs" style={{ color: 'var(--text-s)' }}>@{author.nickname}</span>

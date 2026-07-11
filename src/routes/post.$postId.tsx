@@ -1,17 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { getSession } from '@/server/lib/session'
 import { getPostFn } from '@/server/actions/Database/services/post.service'
 import { Navbar } from '@/components/layout/Navbar'
 import { PostCard } from '@/components/feed/PostCard'
 import type { Post } from '@/lib/entities/Post'
 
 export const Route = createFileRoute('/post/$postId')({
-  loader: async ({ params }) => {
-    const [result, post] = await Promise.all([
-      getSession(),
-      getPostFn({ data: { postId: params.postId } }).catch(() => null),
-    ])
-    return { session: result.session, post }
+  loader: async ({ params, context }) => {
+    // Session comes from root-route context (decrypted once per navigation).
+    const post = await getPostFn({ data: { postId: params.postId } }).catch(() => null)
+    return { session: context.session, post }
   },
   component: PostDetailPage,
 })

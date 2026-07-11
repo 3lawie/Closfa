@@ -8,11 +8,20 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { processAuthCallback } from '@/server/actions/ThirdParty/OAuth/auth0.service'
+import { checkRateLimit } from '@/server/lib/rateLimiter'
+import { logger } from '@/server/lib/logger'
 
 export const Route = createFileRoute('/api/auth/callback')({
   server: {
     handlers: {
       GET: async ({ request }: { request: Request }) => {
+        // Same strict pre-session tier as /api/auth/login.
+        try {
+          await checkRateLimit(null, { limiter: 'auth' })
+        } catch {
+          return new Response('Too many requests. Please try again shortly.', { status: 429 })
+        }
+
         const url = new URL(request.url)
         const code = url.searchParams.get('code')
         const state = url.searchParams.get('state')
@@ -30,7 +39,7 @@ export const Route = createFileRoute('/api/auth/callback')({
             headers: { Location: redirectUrl },
           })
         } catch (err) {
-          console.error('[Auth Callback] Failed:', err)
+          logger.error('auth callback failed', undefined, err instanceof Error ? err : undefined)
           return new Response('Authentication failed. Please try again.', { status: 500 })
         }
       },

@@ -14,19 +14,16 @@
 // ──────────────────────────────────────────────────────────────
 
 import { createFileRoute } from '@tanstack/react-router'
-import { getSession } from '@/server/lib/session'
 import { getFeedFn } from "../server/actions/Database/services/feed.service"
 import { Navbar } from '@/components/layout/Navbar'
 import { FeedList } from '@/components/feed/FeedList'
 
 export const Route = createFileRoute('/')(({
-  loader: async () => {
-    const [result, firstPage] = await Promise.all([
-      getSession(),
-      // Pre-fetch first page of the public "For You" feed
-      getFeedFn({ data: { limit: 15 } }).catch(() => null),
-    ])
-    return { session: result.session, firstPage }
+  loader: async ({ context }) => {
+    // Session comes from root-route context (decrypted once per navigation);
+    // the loader only pre-fetches the first page of the public "For You" feed.
+    const firstPage = await getFeedFn({ data: { limit: 15 } }).catch(() => null)
+    return { session: context.session, firstPage }
   },
   component: HomePage,
 }))
@@ -44,8 +41,8 @@ function HomePage() {
       {/* Feed column — centered, max 680px, matches Navbar width */}
       <main className="max-w-[680px] mx-auto" style={{ borderInline: '1px solid var(--border)' }}>
         <FeedList
-          session={session as any}
-          initialFeedPage={firstPage as any}
+          session={session}
+          initialFeedPage={firstPage}
         />
       </main>
     </div>

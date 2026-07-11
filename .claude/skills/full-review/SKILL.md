@@ -40,7 +40,7 @@ Each finding: `file:line` — one-sentence defect — one-sentence concrete fix.
 ## Constraints
 
 - Findings must be verifiable in the code, not stylistic taste.
-- The project's own documented rules outrank general best practice — **discover** them by reading architecture docs.
+- The project's own documented rules outrank general best practice — **discover** them by reading architecture docs (root `CLAUDE.md`, and `/system-design` + `/patterns` for how those rules were derived).
 - Do not auto-fix anything; report only, unless the user then asks.
 - The report must be actionable: every finding has a concrete fix, not just "this looks wrong."
 

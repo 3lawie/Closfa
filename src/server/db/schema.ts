@@ -79,7 +79,7 @@ export const media = pgTable("media", {
 export const user = pgTable("user", {
     userId: varchar("user_id").primaryKey().$defaultFn(() => createId()),
     name: text("name").notNull(),
-    nickname: text("nickname").unique("name is already taken"),
+    nickname: text("nickname").unique(),
     email: text("email").notNull().unique(),
     authProviderId: text("auth_provider_id").notNull(),
     authProvider: text("auth_provider").notNull().default("email"),
@@ -147,6 +147,12 @@ export const post = pgTable("post", {
     postStatusIndex: index("post_status_index").on(table.post_status),
     postCategoryIndex: index("post_category_index").on(table.post_category),
     postPublishedAtIndex: index("post_published_at_index").on(table.published_at),
+    // Backs the Following feed's keyset cursor `${published_at}_${postId}` —
+    // without the postId tiebreaker column the cursor's OR-condition can't
+    // use the index for the equal-timestamp branch.
+    postPublishedAtPostIdIndex: index("post_published_at_post_id_index").on(table.published_at, table.postId),
+    // Backs the "For You" scan: WHERE is_published ORDER BY likes DESC, published_at DESC.
+    postFeedRankIndex: index("post_feed_rank_index").on(table.is_published, table.likes, table.published_at),
 }))
 
 // Per-user likes. The unique(post_id, user_id) constraint makes liking

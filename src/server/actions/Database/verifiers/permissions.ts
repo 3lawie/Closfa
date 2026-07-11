@@ -13,7 +13,6 @@
 // ──────────────────────────────────────────────────────────────
 
 import { db } from '@/server/db'
-import { schema } from '@/server/db/schema'
 
 export const ROLE_LEVELS = {
   moderator: 1,

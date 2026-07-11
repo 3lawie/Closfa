@@ -4,12 +4,14 @@ Ranked from the 2026-07-09 whole-project baseline review (5 reviewers: system, c
 
 ---
 
-## P0 — Exploitable security (fix before anything else)
+## P0 — Exploitable security — ✅ DONE (verified 2026-07-11, not by this doc's original author)
 
-1. **Close the session-minting hole.** `createSession` (`src/server/lib/session.ts:172`) is a public `createServerFn` with no middleware — anyone can POST a chosen `userId` and receive a valid session cookie (full account takeover). Convert it (and the cookie-write in `destroySession`) to plain server-only functions with no RPC surface. *(security#1)*
-2. **Gate the ImageKit signing endpoints.** Both variants hand out 40-min upload tokens to anonymous callers with no rate limit. Add `authMiddleware + rateLimiterMiddleWare`, drop the unconstrained variant. *(security#2)*
-3. **Stop the moderator privilege escalation.** `assignModerator` accepts an unvalidated `role` string; a co_owner can mint more co_owners. Zod-validate against `profileRoleEnum` and require assigner outranks the granted role. *(security#3)*
-4. **Stop leaking stack traces from `/api/auth/login`.** Return a generic 500; log server-side. *(security#4, ux#10)*
+All four confirmed fixed by reading the current code — each carries an inline comment citing its own `security#N` tag:
+
+1. ~~Close the session-minting hole.~~ `createSession`/`destroySession` are now `createServerOnlyFn` (`src/server/lib/session.ts:183`) — no RPC surface, server-code-only. *(security#1)*
+2. ~~Gate the ImageKit signing endpoints.~~ `getImageKitAuth` (`src/server/actions/ThirdParty/ImageKit/imagekit.service.ts:50`) carries `authMiddleware + rateLimiterMiddleWare`; the old unconstrained Next.js route is gone, replaced entirely — confirmed only one ImageKit auth function exists in the repo. *(security#2)*
+3. ~~Stop the moderator privilege escalation.~~ `assignModerator` (`src/server/actions/Database/services/moderation.service.ts:16`) Zod-validates `role` against `profileRoleEnum` and rejects granting a role ≥ the assigner's own level. *(security#3)*
+4. ~~Stop leaking stack traces from `/api/auth/login`.~~ (`src/routes/api/auth/login.ts`) catches, logs server-side, returns a generic 500 with no error detail. *(security#4, ux#10)*
 
 ## P1 — The core product doesn't work (broken flows)
 
@@ -19,7 +21,10 @@ Ranked from the 2026-07-09 whole-project baseline review (5 reviewers: system, c
 8. **Fix the comment link 404.** `PostCard` navigates to `/post/${id}` which doesn't exist (hidden by an `as '/'` cast). Build the post-detail route or disable the link. *(ux#6)*
 9. **Feed error + retry states.** No `isError` branch on the primary surface; a failed fetch shows an eternal skeleton or a blank column, and a failed infinite-scroll page vanishes silently. *(ux#1, ux#2, ui FeedList)*
 
-## P2 — Re-establish the architecture's own rules
+## P2 — Re-establish the architecture's own rules — ✅ DONE (2026-07-11)
+
+Implemented in 5 PR-sized chunks + CI + structured logging (enterprise additions), reviewed by the code-reviewer and security-reviewer agents. One exploitable open-redirect (control-char bypass in the new `sanitizeReturnTo`) was caught in security review and fixed. 38 tests, tsc + build green. Items 10-15 below are closed; the only remaining manual step is `npm run db:push` for the two new indexes (item 13 — blocked from automation by the repo's own guard-bash hook, must be run by the user).
+
 
 10. **Validation triangle on every server fn.** Wire the already-written Zod schemas from `src/verification/` via `.inputValidator()` into all ~10 functions using `data as any` / passthrough validators (post, comment, follow, moderation, user, imagekit, feed, onboarding). Let `z.infer` type the handlers. *(code, system, security — the single most repeated finding)*
 11. **`ServerResult` for expected failures.** Replace `throw new Error('not found'/'forbidden'/...)` in services with `{ ok: false, error, message }`; `verifyIsOwner` already returns this shape and its result is currently being discarded into a throw. *(code, system)*
@@ -28,7 +33,16 @@ Ranked from the 2026-07-09 whole-project baseline review (5 reviewers: system, c
 14. **Auth return path.** Thread the intended URL through login → PKCE state cookie → callback so deep links behind auth land where the user meant to go (today: always `/`). *(ux#7)*
 15. **Rate-limit the abuse surface.** Only the feed is limited today. Add tiers to auth routes, create/comment/follow/report, nickname claim, ImageKit. Wire the orphaned Turnstile helper into sensitive forms, fail-closed in production. *(security#6, #7)*
 
+**Found 2026-07-11, not in the original baseline review — added here because they're architecture-rule gaps like the rest of P2:**
+
+27. **Schema-validate environment variables.** `src/lib/env/server-env.ts` uses `process.env.X!` (asserts, doesn't check); `client-env.ts` falls back to hardcoded literal config (a real Auth0 domain/client ID, an ImageKit key) when the env var is missing, so a misconfigured deploy silently serves stale config instead of failing at boot. Replace with a Zod schema parsed once at module load — see DESIGN_PATTERNS.md pattern 8.
+28. **Add a test runner.** No `vitest`/`jest`, no test script, no `*.test.ts` anywhere in the repo. Cloudflare's own `@cloudflare/vitest-pool-workers` runs tests inside the real `workerd` runtime, which would also make invariant 6 (edge-only, no Node APIs) an enforced fact instead of a review convention. Start at the service/verifier layer — see DESIGN_PATTERNS.md pattern 9.
+
 ## P3 — One UI system instead of three
+
+**Scope decision (user, 2026-07-11):** P3 is a full UI rebuild from zero, not incremental patching on top of items 16-20 below — and it only starts once P0-P2 are fully complete (security closed, core flows wired, architecture rules re-established). Do not begin it early just because a UI file is touched in an earlier phase.
+
+Process: prototype **5 distinct visual design directions** across the app's 4 main pages — **Feed, Create, Post-detail, Dashboard** — as a bake-off, then the user picks one direction to actually ship. Only the chosen direction gets built out to production quality (primitives, a11y, dark mode, etc.); the other 4 are throwaway comps for comparison. This is the gate before calling the app production-ready.
 
 16. **Bridge tokens into Tailwind (`@theme`).** The root cause of the UI drift: CSS variables exist but aren't Tailwind utilities, so half the app hardcodes `gray/white/amber/blue`. One `@theme` block makes `bg-surface`, `text-body`, `ring-accent` real utilities — everything below depends on it. *(ui-gap#1)*
 17. **Rebuild + adopt the primitives.** Button/Input/Card/Spinner are dead code on the wrong palette (amber-as-CTA inverts the token roles; accent is the interactive color). Rebuild on tokens, then migrate onboarding, create, dashboard, uploader, auth buttons onto them. *(ui-gap#2)*

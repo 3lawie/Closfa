@@ -8,7 +8,6 @@
 //
 // Trade-off: no interactive transactions (use neon-serverless WebSocket driver if needed)
 // ──────────────────────────────────────────────────────────────
-import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { schema } from './schema'
 import { relations } from './relations'

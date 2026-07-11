@@ -88,7 +88,10 @@ const CHAINS = {
     'openrouter:qwen/qwen3-coder:free',
     'groq:openai/gpt-oss-120b',
   ],
+  // GLM leads: highest reasoning score of any free model in the ranking table
+  // (provider-models.md) and the strongest all-rounder for unclassified work.
   general: [
+    'cerebras:zai-glm-4.7',
     'groq:openai/gpt-oss-120b',
     'cerebras:gpt-oss-120b',
     'groq:llama-3.3-70b-versatile',

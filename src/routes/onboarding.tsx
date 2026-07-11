@@ -1,22 +1,29 @@
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
-import { getSession } from '@/server/lib/session'
 import { createServerFn } from '@tanstack/react-start'
+import { useMutation } from '@tanstack/react-query'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { createSession } from '@/server/lib/session'
 import { useState } from 'react'
-import { authMiddleware } from '@/server/lib/middleware'
+import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
+import { claimNicknameValidation } from '@/verification/profile.validation'
+import { ok, err, type ServerResult } from '@/server/lib/result'
+import { logger } from '@/server/lib/logger'
+import { verifyTurnstileToken } from '@/server/lib/turnstile'
+import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
 
 export const claimNicknameFn = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
-  .inputValidator((data: { nickname: string }) => data)
-  .handler(async ({ data, context }) => {
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(claimNicknameValidation)
+  .handler(async ({ data, context }): Promise<ServerResult<{ nickname: string }>> => {
     const { session } = context
     const cleanNickname = data.nickname.trim().toLowerCase()
 
-    if (cleanNickname.length < 3) {
-      throw new Error('Nickname must be at least 3 characters')
+    // Bot gate — fail-closed in production, bypassed in dev without keys.
+    const human = await verifyTurnstileToken(data.turnstileToken)
+    if (!human) {
+      return err('FORBIDDEN', 'Verification failed — please retry the challenge.')
     }
 
     try {
@@ -24,34 +31,38 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
         .set({ nickname: cleanNickname })
         .where(eq(schema.user.userId, session.userId))
 
+      // Re-mint the cookie WITH the new nickname — reusing the old session
+      // object verbatim would bake the stale `nickname: null` into the fresh
+      // cookie and the app would still treat the user as un-onboarded.
       await createSession({
-        sessionData: session,
+        sessionData: { ...session, nickname: cleanNickname },
         existingIssuedAt: session.issuedAt,
       })
 
-      return { ok: true }
-    } catch (e: any) {
-      // Postgres Unique Violation code is '23505'
-      // You named the constraint 'name is already taken', so we can check e.constraint
-      if (e.code === '23505' || e.constraint === 'name is already taken') {
-        throw new Error('This nickname is already taken by another user.')
+      return ok({ nickname: cleanNickname })
+    } catch (e) {
+      // Postgres unique-violation → the nickname is taken (expected failure).
+      const pgError = e as { code?: string; constraint?: string }
+      if (pgError.code === '23505' || pgError.constraint === 'name is already taken') {
+        return err('BAD_REQUEST', 'This nickname is already taken by another user.')
       }
-      console.error(e)
-      throw new Error('An error occurred while claiming your nickname.')
+      logger.error('claimNickname failed', { userId: session.userId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'An error occurred while claiming your nickname.')
     }
   })
 
 export const Route = createFileRoute('/onboarding')({
-  beforeLoad: async () => {
-    const result = await getSession()
-    if (!result.session || result.status === 'expired' || result.status === 'unauthorized') {
+  beforeLoad: ({ context }) => {
+    // Session already decrypted once by the root route — read from context.
+    const { session, sessionStatus } = context
+    if (!session || sessionStatus === 'expired' || sessionStatus === 'unauthorized') {
       throw redirect({ href: '/api/auth/login' })
     }
     // If they already have a nickname, they shouldn't be here
-    if (result.session.nickname) {
+    if (session.nickname) {
       throw redirect({ href: '/' })
     }
-    return { session: result.session }
+    return { session }
   },
   component: OnboardingPage,
 })
@@ -59,22 +70,31 @@ export const Route = createFileRoute('/onboarding')({
 function OnboardingPage() {
   const [nickname, setNickname] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | undefined>(undefined)
   const router = useRouter()
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Mirrors the PostCard likeMutation pattern: mutation owns pending state,
+  // expected failures arrive as { ok: false } results, not thrown errors.
+  const claimMutation = useMutation({
+    mutationFn: (value: string) =>
+      claimNicknameFn({ data: { nickname: value, turnstileToken } }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        router.navigate({ to: '/' })
+      } else {
+        setError(res.message)
+      }
+    },
+    onError: () => {
+      setError('An error occurred — please try again.')
+    },
+  })
+  const loading = claimMutation.isPending
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
-
-    try {
-      await claimNicknameFn({ data: { nickname } })
-      router.navigate({ to: '/' })
-    } catch (err: any) {
-      setError(err.message || 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
+    claimMutation.mutate(nickname)
   }
 
   return (
@@ -108,6 +128,13 @@ function OnboardingPage() {
                 />
               </div>
             </div>
+
+            {/* Bot check — renders only when VITE_TURNSTILE_SITE_KEY is set;
+                the server fails closed in production without a valid token. */}
+            <TurnstileWidget
+              onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken(undefined)}
+            />
 
             {error && (
               <div className="text-red-600 text-sm">{error}</div>

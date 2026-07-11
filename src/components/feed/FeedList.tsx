@@ -8,18 +8,19 @@ import {
   getFeedFn,
   getFollowingFeedFn,
 } from '@/server/actions/Database/services/feed.service'
-import { feedPage } from '@/lib/entities/Post'
-import { SessionData } from '@/server/lib/session'
-import z from 'zod'
+import type { FeedPage } from '@/lib/entities/Post'
+import type { SessionData } from '@/server/lib/session'
 
 type Tab = 'forYou' | 'following'
 
-const feedListProps = z.object({
-  session: SessionData,
-  initialFeedPage: feedPage
-}).nonoptional()
-
-type FeedListProps = z.infer<typeof feedListProps>
+// Plain TS props, nullable by design: guests have no session, and the SSR
+// loader's feed prefetch can fail (`.catch(() => null)`). The component
+// already guards both, so the previous non-null Zod props schema only
+// forced `as any` at the index.tsx call site without adding safety.
+type FeedListProps = {
+  session: SessionData | null
+  initialFeedPage: FeedPage | null
+}
 
 export function FeedList({ session, initialFeedPage }: FeedListProps) {
   const [activeTab, setActiveTab] = useState<Tab>('forYou')
@@ -128,7 +129,7 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
           )}
 
           {posts.map((post) => (
-            <PostCard key={post.postId} post={post} />
+            <PostCard key={post.postId} post={post} currentUserId={session?.userId} />
           ))}
 
           {/* "Load more" skeleton card */}

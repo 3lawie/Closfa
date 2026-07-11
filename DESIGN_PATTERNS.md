@@ -105,3 +105,25 @@ type ServerResult<T> =
 | **Validation** (Zod schemas) | `src/verification/` | Input shape, shared with client forms |
 
 **Boundary rule:** nothing under `src/components/` or `src/lib/` imports from `src/server/` — this prevents environment leakage and bundle bloat.
+
+---
+
+## 8. Environment Variables — Schema-Validated at the Boundary
+
+**Principle:** `process.env` is external input, same category as a request body — pattern 4 already says every external input is validated at the boundary. Env vars are the one boundary this codebase currently skips.
+
+**Exemplar (missing):** the established, framework-agnostic version of this is `@t3-oss/env-core` (Zod schema, validated once at module load, fails fast on a misconfigured deploy instead of failing deep inside a request); a hand-rolled `z.object({...}).parse(process.env)` in `src/lib/env/server-env.ts` gets the same guarantee with no new dependency.
+
+> ⚠️ Known drift (found 2026-07-11): `src/lib/env/server-env.ts` uses non-null assertions (`process.env.DATABASE_URL!`) — TypeScript is told the value exists; nothing actually checks. A missing var surfaces as an obscure runtime error wherever it's first read, not at boot. `src/lib/env/client-env.ts` is worse: `imagekitPublicKey`, `auth0Domain`, `auth0ClientId` etc. all fall back to **hardcoded literal values** baked into the source when the env var is absent — so a misconfigured deploy doesn't fail, it silently serves the wrong (possibly stale, possibly a different environment's) config.
+
+**Rule of thumb:** every entry in `serverEnv`/`clientEnv` comes from a Zod schema parsed once at module load; no `!` assertions, no literal fallback values for anything that is actually configuration (a `.default()` in the schema is fine for genuinely optional values — a hardcoded production Auth0 domain as a "fallback" is not).
+
+---
+
+## 9. Test the Runtime You Actually Deploy To
+
+**Principle:** Invariant 6 (edge runtime only, no Node-only APIs) is currently enforced by code review and eslint, not by anything that runs. Cloudflare's own recommended integration — `@cloudflare/vitest-pool-workers` — runs tests inside the real `workerd` runtime, so a test using a Node-only API fails the same way production would, not just in review.
+
+**Exemplar (missing):** no test runner is configured in this repo today (no `vitest`/`jest` dependency, no test script, no `*.test.ts` files). Standard setup: `vitest` + `@cloudflare/vitest-pool-workers`, `cloudflareTest()` in `vitest.config.ts`, `npm run test` added to `package.json`.
+
+**Rule of thumb:** start at the service/verifier layer (pattern 7) — those are plain functions with a clear input/output contract and are where the highest-value bugs live (ownership checks, the error-contract arms in pattern 3). Route through the same middleware chain as production so a test's pass/fail reflects what actually ships, not a mocked approximation of it.

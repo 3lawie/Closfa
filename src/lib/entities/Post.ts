@@ -24,9 +24,9 @@ export const ALLOWED_MEDIA_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYP
 
 
 export const MediaZod = z.object({
-  mediaId: z.string().min(1, "Media ID is required"),
+  media_id: z.string().min(1, "Media ID is required"),
   mediaUrl: z.string().min(1, "Media URL is required"),
-  mediaType: z.enum(["image", "video", "audio"]),
+  media_type: z.enum(["image", "video", "audio"]),
   fileName: z.string().min(1, "File name is required"),
   mimeType: z.enum(ALLOWED_MEDIA_TYPES, { error: 'Unsupported media type' }),
   fileSize: z.number().int().positive().optional(),
@@ -56,7 +56,7 @@ export type PostAuthor = z.infer<typeof PostAuthor>
 export const Post = z.object({
   postId: z.string(),
   content: z.string().nullable(),
-  author: PostAuthor.nullable(),
+  primaryAuthor: PostAuthor.nullable(),
   postCategory: z.array(z.string()),
   postType: z.enum(['solo', 'collab']),
   publishedAt: z.date().nullable(),

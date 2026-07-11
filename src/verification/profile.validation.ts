@@ -19,5 +19,16 @@ export const updateDisplayNameValidation = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, 'Nickname can only contain letters, numbers, and underscores'),
 })
 
+/**
+ * Onboarding nickname claim — same nickname rules as display-name updates.
+ * turnstileToken is optional at the schema level: in dev without Turnstile
+ * keys the widget never produces one; the server verifier fails closed in
+ * production when it's absent.
+ */
+export const claimNicknameValidation = updateDisplayNameValidation
+  .pick({ nickname: true })
+  .extend({ turnstileToken: z.string().optional() })
+
 export type UpdateProfileInput = z.infer<typeof updateProfileValidation>
 export type UpdateDisplayNameInput = z.infer<typeof updateDisplayNameValidation>
+export type ClaimNicknameInput = z.infer<typeof claimNicknameValidation>

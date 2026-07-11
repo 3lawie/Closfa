@@ -49,6 +49,8 @@ You are the ORCHESTRATOR: think, decompose, brief, review, decide. Producing cod
 
 Review cheaply: check output against the brief's acceptance criteria and the completion marker — don't re-derive the work. Protocol: `/delegate`. Prompting rules: `.claude/skills/delegate/references/worker-prompting.md`.
 
+**Task-level checkpoint:** when creating plan tasks via `TaskCreate`, note `delegate: yes — role X` or `delegate: no — <exception>` in the task so the call is explicit, not assumed. A global `PreToolUse` hook (`~/.claude/hooks/nudge-delegation.mjs`, wired in user `settings.json` — applies to every project, not just this one) reminds you if direct edits pile up with no worker call in between — treat it as a checkpoint to re-evaluate, not noise to dismiss.
+
 ## Model routing — orchestrator + free workers
 
 The paid Claude model in this session is the ORCHESTRATOR: it plans, decomposes, delegates, reviews, and ships. Free worker models do bulk drafting, analysis, and search via `node .claude/tools/ask-worker.mjs --role <role>` (self-contained briefs; `--file` to attach context).
@@ -64,10 +66,19 @@ The paid Claude model in this session is the ORCHESTRATOR: it plans, decomposes,
 
 Roles: `--role code` (draft functions/components), `reason` (analysis/tradeoffs), `bulk` (summarize large inputs), `design` (first-pass UI), `general`. Model IDs live in `CHAINS` in the script — re-verify against provider docs if a role 404s.
 
+Per-model ranking (cost/intelligence/taste) and which providers can act as a live `claude` CLI backend vs. worker-only: `.claude/skills/delegate/references/provider-models.md` (project copy) — same table also lives in `~/.claude/CLAUDE.md` so it travels to every project.
+
 How to apply:
 - **Delegate down** for: summarizing/analyzing large inputs, drafting a well-specified function or component, bulk transforms, research digestion. The worker sees only your brief — make it self-contained.
 - **Escalate back up (do it yourself)** for: multi-file/cross-module changes, anything touching auth/session/data/security, ambiguous requirements, design-taste calls, or output that fails review twice. Workers draft; you decide, review, ship. Never commit worker output unreviewed.
 - Defaults, not limits: judge the output, not the price tag. Escalating costs less than shipping mediocre work.
+
+## Three delegation lanes, free-first by default
+1. **Direct `ask-worker.mjs` call** — DEFAULT for a fully-specified, one-shot task.
+2. **`worker-manager` subagent** (global, Sonnet, no Write/Edit) — DEFAULT when the task is delegable but will likely need 1-3 rebrief/retry cycles or output checked against several files; it dispatches to the same free workers and returns one reviewed result, keeping the iteration noise out of your context.
+3. **You, or a Claude-native subagent** (Explore/general-purpose/the reviewer agents in `.claude/agents/`) — LAST RESORT: multi-file repo navigation, auth/session/security/migrations, ambiguous requirements, final design-taste calls. Don't spawn a `general-purpose` subagent just because the task also needs a Write at the end — draft via lane 1/2 and apply the reviewed result yourself instead of paying for a whole Claude subagent to do both.
+
+Subagents can only run on Claude models — a subagent inherits the session's fixed backend and cannot independently call Groq/Cerebras/OpenRouter. `worker-manager` is a Sonnet wrapper *around* worker calls, not a worker itself; there is no way to make a subagent literally *be* a free model. `zai-glm-4.7` (Cerebras) leads the `general` and `reason` chains in `ask-worker.mjs` — highest-ranked free all-rounder. Full ranking (including the orchestration/reasoning/speed axes for Claude-tier models): `.claude/skills/delegate/references/provider-models.md`.
 
 ## Skills & tooling
 

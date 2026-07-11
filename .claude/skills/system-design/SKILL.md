@@ -37,6 +37,6 @@ Read `learnings.md` beside this file before starting; append an entry when a des
 
 ## Handoffs
 
-- After the user approves the design → implementation follows `/patterns` (discover exemplar files per piece).
+- After the user approves the design → implementation follows `/patterns` (discover exemplar files per piece). Note in the design doc which pieces are one-shot delegable (a self-contained service/schema/component), which need the `worker-manager` subagent (likely to need rebriefing), and which need the orchestrator directly (auth/security-touching, or crossing the module triangle) — the three-lane split in root `CLAUDE.md`.
 - UI surfaces in the design → hand the route plan to `/web-design-patterns` for data-loading/UX flow decisions and `/creative-ui` for the visual layer.
 - After implementation → `/full-review` validates the built system matches this design; paste the design doc into the review context.

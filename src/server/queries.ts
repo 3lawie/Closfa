@@ -68,7 +68,13 @@ export const queries = {
     /**
      * "For You" — algorithm feed.
      * Sorts by engagement (likes desc) then recency within the last 30 days.
-     * Uses offset pagination so the sort order can be freely changed later.
+     *
+     * DELIBERATELY offset-paginated (decision confirmed 2026-07-11): the sort
+     * key `likes` mutates constantly, so a keyset cursor over it would skip
+     * or duplicate posts whenever counts change mid-scroll — strictly worse
+     * UX than offset drift. The Following feed, sorted on immutable
+     * (published_at, postId), is where keyset pagination belongs. Backed by
+     * the post_feed_rank_index (is_published, likes, published_at).
      */
     getFeed: (limit = 15, page = 1) => {
       const offset = (page - 1) * limit

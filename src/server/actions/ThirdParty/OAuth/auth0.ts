@@ -28,6 +28,9 @@
 
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 import { z } from 'zod'
+import { sanitizeReturnTo } from './auth0.rules'
+
+export { sanitizeReturnTo }
 
 // ──────────────────────────────────────────────────────────────
 // Zod Schemas & Types
@@ -85,9 +88,10 @@ function base64UrlEncode(bytes: Uint8Array): string {
 // ──────────────────────────────────────────────────────────────
 const STATE_COOKIE = 'auth0_state'
 
-function setStateCookie(state: string, codeVerifier: string): void {
-  // Short-lived cookie (10 minutes) — only needed during the auth redirect
-  const value = JSON.stringify({ state, codeVerifier })
+function setStateCookie(state: string, codeVerifier: string, returnTo: string | null = null): void {
+  // Short-lived cookie (10 minutes) — only needed during the auth redirect.
+  // returnTo is already sanitized by the caller (and re-sanitized on read).
+  const value = JSON.stringify(returnTo ? { state, codeVerifier, returnTo } : { state, codeVerifier })
   const cookie = [
     `${STATE_COOKIE}=${encodeURIComponent(value)}`,
     'Max-Age=600',
@@ -99,7 +103,7 @@ function setStateCookie(state: string, codeVerifier: string): void {
   setResponseHeader('Set-Cookie', cookie)
 }
 
-function getStateCookie(): { state: string; codeVerifier: string } | null {
+function getStateCookie(): { state: string; codeVerifier: string; returnTo?: string } | null {
   try {
     const request = getRequest()
     if (!request) return null
@@ -161,15 +165,17 @@ function getCallbackUrl(): string {
  * Stores code_verifier + state in a temporary cookie so we can
  * verify them when Auth0 redirects back.
  */
-export async function getAuth0LoginUrl(): Promise<string> {
+export async function getAuth0LoginUrl(returnTo?: string | null): Promise<string> {
   const { domain, clientId } = getAuth0Config()
 
   const codeVerifier = generateCodeVerifier()
   const codeChallenge = await generateCodeChallenge(codeVerifier)
   const state = base64UrlEncode(crypto.getRandomValues(new Uint8Array(16)))
 
-  // Persist verifier and state for callback validation
-  setStateCookie(state, codeVerifier)
+  // Persist verifier, state, and the (sanitized) post-login destination for
+  // callback validation — deep links behind auth land where the user meant
+  // to go instead of always '/'.
+  setStateCookie(state, codeVerifier, sanitizeReturnTo(returnTo))
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -194,7 +200,7 @@ export async function getAuth0LoginUrl(): Promise<string> {
 export async function exchangeCodeForToken(
   code: string,
   returnedState: string,
-): Promise<TokenResponse> {
+): Promise<{ tokens: TokenResponse; returnTo: string | null }> {
   const { domain, clientId, clientSecret } = getAuth0Config()
 
   // Read and clear the state cookie
@@ -208,6 +214,10 @@ export async function exchangeCodeForToken(
   if (stored.state !== returnedState) {
     throw new Error('State mismatch — possible CSRF attack')
   }
+
+  // Re-sanitize on read (defense in depth — the cookie is HttpOnly but the
+  // guard is cheap and the redirect is the whole attack surface here).
+  const returnTo = sanitizeReturnTo(stored.returnTo ?? null)
 
   const response = await fetch(`https://${domain}/oauth/token`, {
     method: 'POST',
@@ -228,7 +238,7 @@ export async function exchangeCodeForToken(
   }
 
   const data = await response.json()
-  return TokenResponse.parse(data)
+  return { tokens: TokenResponse.parse(data), returnTo }
 }
 
 // (Auth0UserInfoSchema defined at the top of the file)
