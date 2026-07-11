@@ -28,16 +28,13 @@ export async function processAuthCallback(code: string, state: string) {
 
   // ── Step 4: Create encrypted session cookie ──
   await createSession({
-    data: {
-      sessionData: {
-        userId: finalUser.userId,
-        sub: userInfo.sub,
-        email: userInfo.email,
-        name: userInfo.name,
-        nickname: finalUser.nickname,
-      },
-      // Optional: add existingIssuedAt here if needed
-    }
+    sessionData: {
+      userId: finalUser.userId,
+      sub: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+      nickname: finalUser.nickname,
+    },
   })
 
   // ── Step 5: Return redirect URL ──

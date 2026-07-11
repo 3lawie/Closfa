@@ -1,7 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
-import { authMiddleware } from '@/server/lib/middleware'
+import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
+import { updateProfileValidation } from '@/verification/profile.validation'
 import { eq } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 
@@ -41,24 +42,20 @@ export async function upsertAuthUser(userInfo: {
 }
 
 export const updateProfile = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
-  // .validator(profileSchema) // TODO: Add Zod validation
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(updateProfileValidation)
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const profileData = data as any // Replace with valid type once Zod is added
+    const profileData = data
 
-    // 1. Verify: user can only update their own profile
-    // Wait, the user is updating their own profile based on their session ID.
-    // If they are trying to update another profile, verifyIsOwner would be used.
-    // In this case, we just use their session userId.
-
-    // 2. Execute
+    // Ownership is implicit: a user can only update their OWN profile, keyed by
+    // the session userId — never a client-supplied profile id.
     await db.update(schema.profile)
       .set({
         bio: profileData.bio,
         website: profileData.website,
         location: profileData.location,
-        avatar: profileData.image, // mediaId
+        avatar: profileData.imageMediaId, // mediaId of an uploaded avatar
         updatedAt: new Date(),
       })
       .where(eq(schema.profile.userId, userId))

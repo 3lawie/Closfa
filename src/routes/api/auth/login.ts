@@ -11,9 +11,11 @@ export const Route = createFileRoute('/api/auth/login')({
             status: 302,
             headers: { Location: url },
           })
-        } catch (error: any) {
-          console.error("Login Route Error:", error)
-          return new Response(`Error: ${error.message}\nStack: ${error.stack}`, { status: 500 })
+        } catch (error) {
+          // Log the real error server-side; never leak message/stack to the
+          // client (security#4, ux#10).
+          console.error('[Auth Login] Failed:', error)
+          return new Response('Unable to start login. Please try again.', { status: 500 })
         }
       },
     },

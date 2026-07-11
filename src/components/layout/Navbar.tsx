@@ -25,6 +25,15 @@ export function Navbar({ session }: { session: SessionData | null }) {
           {session ? (
             <>
               <Link
+                to="/create"
+                className="text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--accent)', background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
+                activeProps={{ style: { color: 'white', background: 'var(--accent)' } }}
+              >
+                + New post
+              </Link>
+
+              <Link
                 to="/dashboard"
                 className="text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
                 style={{ color: 'var(--text)' }}

@@ -25,10 +25,8 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
         .where(eq(schema.user.userId, session.userId))
 
       await createSession({
-        data: {
-          sessionData: session,
-          existingIssuedAt: session.issuedAt
-        }
+        sessionData: session,
+        existingIssuedAt: session.issuedAt,
       })
 
       return { ok: true }

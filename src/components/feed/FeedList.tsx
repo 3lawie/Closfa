@@ -1,24 +1,3 @@
-// ──────────────────────────────────────────────────────────────
-// FeedList — tabs + infinite scroll for the home feed.
-//
-// Architecture:
-//   • "For You"  tab: all published posts — loaded server-side
-//     in the route loader (SSR), subsequent pages loaded client-side
-//   • "Following" tab: posts from followed users — client-side only
-//     (requires session, not SSR-prefetched)
-//
-// Infinite scroll uses IntersectionObserver on a sentinel <div>
-// at the bottom of the list. When it enters the viewport, the
-// next page is fetched via useInfiniteQuery.
-//
-// useInfiniteQuery (TanStack Query v5):
-//   • initialData    — populates the first page from the SSR loader,
-//     so no loading state on first render
-//   • getNextPageParam — extracts nextCursor from each page response
-//   • enabled        — prevents the "Following" query from running
-//     until that tab is selected and the user is authenticated
-// ──────────────────────────────────────────────────────────────
-
 import { useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils/cn'
@@ -34,7 +13,6 @@ import { SessionData } from '@/server/lib/session'
 import z from 'zod'
 
 type Tab = 'forYou' | 'following'
-
 
 const feedListProps = z.object({
   session: SessionData,
@@ -159,6 +137,35 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
           {/* Sentinel div — triggers next page when visible */}
           <div ref={sentinelRef} className="h-px" />
 
+          {/* Primary‑surface error (no posts) */}
+          {activeQuery.isError && posts.length === 0 && !activeQuery.isLoading && (
+            <div className="py-16 flex flex-col items-center gap-3 px-8 text-center">
+              <p className="font-semibold" style={{ color: 'var(--text-h)' }}>
+                Couldn't load the feed.
+              </p>
+              <button
+                onClick={() => activeQuery.refetch()}
+                className="py-2 px-4 rounded"
+                style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* Failed next‑page error */}
+          {activeQuery.isFetchNextPageError && (
+            <div className="py-4 flex justify-center">
+              <button
+                onClick={() => activeQuery.fetchNextPage()}
+                className="text-sm py-2 px-4 rounded"
+                style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}
+              >
+                Couldn't load more — Retry
+              </button>
+            </div>
+          )}
+
           {/* End-of-feed message */}
           {!activeQuery.hasNextPage && posts.length > 0 && (
             <p
@@ -170,7 +177,7 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
           )}
 
           {/* Empty state — Following tab, no follows yet */}
-          {activeTab === 'following' && session && posts.length === 0 && !activeQuery.isLoading && (
+          {activeTab === 'following' && session && posts.length === 0 && !activeQuery.isLoading && !activeQuery.isError && (
             <div className="py-16 flex flex-col items-center gap-3 px-8 text-center">
               <div
                 className="w-14 h-14 rounded-full flex items-center justify-center text-2xl"
@@ -188,7 +195,7 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
           )}
 
           {/* Empty state — For You, no posts at all */}
-          {activeTab === 'forYou' && posts.length === 0 && !activeQuery.isLoading && (
+          {activeTab === 'forYou' && posts.length === 0 && !activeQuery.isLoading && !activeQuery.isError && (
             <div className="py-16 flex flex-col items-center gap-3 px-8 text-center">
               <p className="font-semibold" style={{ color: 'var(--text-h)' }}>
                 No posts yet

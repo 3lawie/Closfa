@@ -1,16 +1,17 @@
 import { createServerFn } from '@tanstack/react-start'
-import { authMiddleware } from '@/server/lib/middleware'
+import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { getProfilePermission } from "../verifiers/permissions"
+import { createCommentValidation, deleteCommentValidation } from '@/verification/comment.validation'
 import { eq } from 'drizzle-orm'
 
 export const createComment = createServerFn({ method: 'POST' })
-
-  .middleware([authMiddleware])
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(createCommentValidation)
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const commentData = data as any
+    const commentData = data
 
     const [newComment] = await db.insert(schema.comment)
       .values({
@@ -30,10 +31,11 @@ export const createComment = createServerFn({ method: 'POST' })
   })
 
 export const deleteComment = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(deleteCommentValidation)
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { commentId } = data as unknown as { commentId: string }
+    const { commentId } = data
 
     const comment = await db.query.comment.findFirst({
       where: { comment_id: commentId } as any,

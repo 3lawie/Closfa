@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useMutation } from '@tanstack/react-query'
+import { toggleLike } from '@/server/actions/Database/services/like.service'
 import { cn } from '@/lib/utils/cn'
 import { formatRelativeTime, formatCount } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
@@ -158,9 +160,27 @@ export function PostCard({ post }: { post: Post }) {
   const author = post.author
   const isLong = (post.content?.length ?? 0) > 280
 
+  // Optimistic like: flip immediately, reconcile with the server's authoritative
+  // count on success, roll back to the snapshot on error.
+  const likeMutation = useMutation({
+    mutationFn: () => toggleLike({ data: { postId: post.postId } }),
+    onMutate: () => {
+      const snapshot = { liked, likes: localLikes }
+      setLiked((v) => !v)
+      setLocalLikes((n: number) => (liked ? Math.max(0, n - 1) : n + 1))
+      return snapshot
+    },
+    onError: (_err, _vars, snapshot) => {
+      if (snapshot) { setLiked(snapshot.liked); setLocalLikes(snapshot.likes) }
+    },
+    onSuccess: (res) => {
+      if (res.ok) { setLiked(res.data.liked); setLocalLikes(res.data.likes) }
+    },
+  })
+
   function handleLike() {
-    if (liked) { setLiked(false); setLocalLikes((n: number) => Math.max(0, n - 1)) }
-    else { setLiked(true); setLocalLikes((n: number) => n + 1) }
+    if (likeMutation.isPending) return
+    likeMutation.mutate()
   }
 
   return (
@@ -231,7 +251,7 @@ export function PostCard({ post }: { post: Post }) {
           <span>{formatCount(localLikes)}</span>
         </button>
 
-        <Link to={`/post/${post.postId}` as '/'} className="flex items-center gap-1.5 text-xs font-medium opacity-60 hover:opacity-100 transition-opacity px-2 py-1" style={{ color: 'var(--text)' }}>
+        <Link to="/post/$postId" params={{ postId: post.postId }} className="flex items-center gap-1.5 text-xs font-medium opacity-60 hover:opacity-100 transition-opacity px-2 py-1" style={{ color: 'var(--text)' }}>
           <IconComment />
           <span>{formatCount(post.comments)}</span>
         </Link>

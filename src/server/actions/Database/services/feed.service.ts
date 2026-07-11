@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { queries } from '@/server/queries'
-import { authMiddleware, rateLimiterMiddleWare, SessionData } from '@/server/lib/middleware'
+import { authMiddleware, optionalAuthMiddleware, rateLimiterMiddleWare, SessionData } from '@/server/lib/middleware'
 import type { FeedPage } from '@/lib/entities/Post'
 import z from 'zod'
 
@@ -14,10 +14,10 @@ const feedInput = z.object({
 })
 type FeedInput = z.infer<typeof feedInput>
 
-/** "For You" feed — all published posts. No auth required. */
+/** "For You" feed — all published posts. Public: guests and users alike. */
 export const getFeedFn = createServerFn({ method: 'GET' })
-  .middleware([authMiddleware, rateLimiterMiddleWare])
-  .inputValidator((data?: FeedInput) => data)
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(feedInput.optional())
   .handler(async ({ data, context }): Promise<FeedPage> => {
     const { page = 1, limit = FEED_LIMIT } = data ?? {}
     const posts = await queries.post.getFeed(limit, page)
@@ -28,7 +28,7 @@ export const getFeedFn = createServerFn({ method: 'GET' })
 /** "Following" feed — posts from followed users. Requires auth. */
 export const getFollowingFeedFn = createServerFn({ method: 'GET' })
   .middleware([authMiddleware])
-  .inputValidator((data?: FeedInput) => data)
+  .inputValidator(feedInput.optional())
   .handler(async ({ data, context }): Promise<FeedPage> => {
     const { session } = context
     const { cursor, direction = 'older', limit = FEED_LIMIT } = data ?? {}

@@ -26,12 +26,27 @@ function openDB(): Promise<IDBDatabase> {
     })
 }
 
+/** Metadata captured when a file is staged (mirrors MediaContatiner's originalMedia). */
+export interface StoredMediaDetails {
+    mediaId: string
+    fileName: string
+    fileSize?: number
+    mimeType: string
+    mediaType: 'image' | 'video' | 'audio'
+    width?: number
+    height?: number
+    duration?: number
+}
+
 export interface StoredMedia {
     mediaId: string
     fileName: string
     blob: Blob
     mimeType: string
-    metadata: Record<string, unknown>
+    metadata: {
+        originalMedia: StoredMediaDetails
+        editedMedia?: StoredMediaDetails
+    }
 }
 
 /** Save a media file + its metadata to IndexedDB */

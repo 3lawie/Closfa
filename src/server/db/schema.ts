@@ -149,6 +149,19 @@ export const post = pgTable("post", {
     postPublishedAtIndex: index("post_published_at_index").on(table.published_at),
 }))
 
+// Per-user likes. The unique(post_id, user_id) constraint makes liking
+// idempotent (a user can like a post at most once); post.likes is the
+// denormalized counter the feed ranks on.
+export const postLike = pgTable("post_like", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    postId: varchar("post_id").notNull().references(() => post.postId),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    postLikeUnique: unique("post_like_unique").on(table.postId, table.userId),
+    postLikeUserIndex: index("post_like_user_index").on(table.userId),
+}))
+
 // Junction: many posts ↔ many categories (for multi-category tagging)
 export const postToCategory = pgTable("post_to_category", {
     post_id: varchar("post_id").notNull().references(() => post.postId),
@@ -294,7 +307,7 @@ export const subscription = pgTable("subscription", {
 
 export const schema = {
     user, follow, profile,
-    categories, post, postToCategory,
+    categories, post, postLike, postToCategory,
     comment, commentReply,
     media, postToUser, postToMedia,
     profileMember, report, auditLog, notification, subscription

@@ -49,7 +49,7 @@
 
 import { EncryptJWT, jwtDecrypt } from 'jose'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-import { createServerFn } from '@tanstack/react-start'
+import { createServerFn, createServerOnlyFn } from '@tanstack/react-start'
 import { z } from 'zod'
 
 /** What we store inside the session cookie */
@@ -148,10 +148,8 @@ export const getSession = createServerFn({ method: "GET" })
       if (timeRemaining < threshold) {
         // renew session silently
         await createSession({
-          data: {
-            sessionData: session,
-            existingIssuedAt: session.issuedAt
-          }
+          sessionData: session,
+          existingIssuedAt: session.issuedAt,
         })
 
         return { session, status: 'renewed' }
@@ -165,21 +163,26 @@ export const getSession = createServerFn({ method: "GET" })
     }
   })
 
+/** Input for {@link createSession} — timestamps are computed server-side. */
+export type CreateSessionInput = {
+  sessionData: Omit<SessionData, 'issuedAt' | 'expiresAt'>
+  existingIssuedAt?: number
+}
+
 /**
  * Encrypt the session data and set it as an HttpOnly cookie on the response.
+ *
+ * SERVER-ONLY — `createServerOnlyFn` (NOT `createServerFn`). A `createServerFn`
+ * mints an HTTP RPC endpoint, which let any anonymous caller POST a chosen
+ * `userId` and receive a valid session cookie (full account takeover).
+ * `createServerOnlyFn` strips this from the client bundle and throws if called
+ * client-side, with no RPC surface. Only server code may call it: the Auth0
+ * callback, the sliding-window renewal in `getSession`, and the nickname-claim
+ * server function. (security#1)
  */
-
-export const createSession = createServerFn({ method: "POST" })
-  .inputValidator(
-    // Pass the Zod object directly instead of nesting it under an outer object
-    z.object({
-      sessionData: SessionData.omit({ issuedAt: true, expiresAt: true }),
-      existingIssuedAt: z.number().optional(),
-    })
-  )
-  // Let TanStack infer the input from the validator above
-  .handler(async ({ data }): Promise<SessionResult> => {
-    const { sessionData, existingIssuedAt } = data
+export const createSession = createServerOnlyFn(
+  async (input: CreateSessionInput): Promise<SessionResult> => {
+    const { sessionData, existingIssuedAt } = input
     const now = Math.floor(Date.now() / 1000)
     const expiresAt = now + SESSION_DURATION_SECONDS
     const issuedAt = existingIssuedAt ?? now
@@ -199,22 +202,25 @@ export const createSession = createServerFn({ method: "POST" })
     const cookieValue = buildCookieString(COOKIE_NAME, token, SESSION_DURATION_SECONDS)
     setResponseHeader('Set-Cookie', cookieValue)
 
-    // FIX: Must return a payload matching your SessionResult interface
+    // Return a payload matching the SessionResult interface
     return {
       session: fullSessionData,
       status: existingIssuedAt ? 'renewed' : 'valid'
     }
-  })
+  }
+)
 
 
 /**
  * Destroy the session by clearing the cookie (max-age=0).
+ *
+ * SERVER-ONLY (see {@link createSession}) — no RPC surface. Called by the
+ * logout route handler.
  */
-export const destroySession = createServerFn({ method: "POST" })
-  .handler(async (): Promise<void> => {
-    const cookieValue = buildCookieString(COOKIE_NAME, '', 0)
-    setResponseHeader('Set-Cookie', cookieValue)
-  })
+export const destroySession = createServerOnlyFn(async (): Promise<void> => {
+  const cookieValue = buildCookieString(COOKIE_NAME, '', 0)
+  setResponseHeader('Set-Cookie', cookieValue)
+})
 
 // ──────────────────────────────────────────────────────────────
 // Helper: build the Set-Cookie string with security flags

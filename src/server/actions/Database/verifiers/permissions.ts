@@ -15,7 +15,7 @@
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 
-const ROLE_LEVELS = {
+export const ROLE_LEVELS = {
   moderator: 1,
   vip_moderator: 2,
   co_owner: 3,

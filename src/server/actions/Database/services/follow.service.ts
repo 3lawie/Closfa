@@ -1,14 +1,18 @@
 import { createServerFn } from '@tanstack/react-start'
-import { authMiddleware } from '@/server/lib/middleware'
+import { z } from 'zod'
+import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { and, eq } from 'drizzle-orm'
 
+const followInput = z.object({ targetUserId: z.string().min(1) })
+
 export const followUser = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(followInput)
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { targetUserId } = data as unknown as { targetUserId: string }
+    const { targetUserId } = data
 
     if (userId === targetUserId) {
       throw new Error("You cannot follow yourself")
@@ -35,10 +39,11 @@ export const followUser = createServerFn({ method: 'POST' })
   })
 
 export const unfollowUser = createServerFn({ method: 'POST' })
-  .middleware([authMiddleware])
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(followInput)
   .handler(async ({ data, context }) => {
     const { userId } = context.session
-    const { targetUserId } = data as unknown as { targetUserId: string }
+    const { targetUserId } = data
 
     await db.delete(schema.follow).where(
       and(
