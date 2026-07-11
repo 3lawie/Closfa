@@ -28,11 +28,11 @@ function openDB(): Promise<IDBDatabase> {
 
 /** Metadata captured when a file is staged (mirrors MediaContatiner's originalMedia). */
 export interface StoredMediaDetails {
-    mediaId: string
+    media_id: string
     fileName: string
     fileSize?: number
     mimeType: string
-    mediaType: 'image' | 'video' | 'audio'
+    media_type: 'image' | 'video' | 'audio'
     width?: number
     height?: number
     duration?: number

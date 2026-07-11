@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toggleLike } from '@/server/actions/Database/services/like.service'
@@ -130,22 +130,32 @@ function MediaGrid({ media }: { media: Media[] }) {
             }
 
             const transforms = displayMedia.length === 1 ? 'tr:w-800,c-at_max,f-avif' : 'tr:w-400,h-400,c-at_max,f-avif'
-            const src = `${IK}/${transforms}/${m.mediaUrl}`
+
+            // Progressive image states: 
+            // - blur thumbnail loads extremely fast
+            // - full resolution image loads smoothly in the background
+            const blurTransforms = displayMedia.length === 1 ? 'tr:w-100,bl-10,q-20,c-at_max,f-avif' : 'tr:w-50,h-50,bl-10,q-20,c-at_max,f-avif'
+
+            const aspect = displayMedia.length === 1 && m.width && m.height ? `${m.width} / ${m.height}` : undefined
 
             return (
               <div
                 key={m.mediaUrl}
                 className={cn(
                   'overflow-hidden relative flex items-center justify-center',
-                  displayMedia.length === 1 ? 'max-h-[500px]' : '',
+                  displayMedia.length === 1 ? 'max-h-[500px] w-full' : '',
                   displayMedia.length === 3 && i === 0 ? 'row-span-2' : '',
                 )}
                 style={{
                   background: 'var(--border)',
-                  ...(displayMedia.length > 1 ? { aspectRatio: '1 / 1' } : { border: '1px solid var(--border)', borderRadius: '0.75rem' })
+                  aspectRatio: displayMedia.length > 1 ? '1 / 1' : aspect,
+                  ...(displayMedia.length === 1 ? { border: '1px solid var(--border)', borderRadius: '0.75rem' } : {})
                 }}
               >
-                <img src={src} alt="" loading="lazy" className="w-full h-full object-cover transition-opacity duration-300" />
+                <ProgressiveImage
+                  blurSrc={`${IK}/${blurTransforms}/${m.mediaUrl}`}
+                  fullSrc={`${IK}/${transforms}/${m.mediaUrl}`}
+                />
               </div>
             )
           })}
@@ -156,12 +166,72 @@ function MediaGrid({ media }: { media: Media[] }) {
         <audio
           key={a.mediaUrl}
           src={`${IK}/${a.mediaUrl}`}
+          className="w-full mt-3 rounded-lg"
           controls
-          className="w-full h-9 rounded-lg"
-          style={{ accentColor: 'var(--accent)' }}
+          preload="metadata"
         />
       ))}
     </div>
+  )
+}
+
+function ProgressiveImage({ blurSrc, fullSrc }: { blurSrc: string, fullSrc: string }) {
+  const [status, setStatus] = useState<'skeleton' | 'blur' | 'loaded' | 'error'>('skeleton')
+  const blurRef = useRef<HTMLImageElement>(null)
+  const fullRef = useRef<HTMLImageElement>(null)
+
+  // Fix for SSR/hydration: If images load before React attaches onLoad, 
+  // we need to manually check their complete status on mount.
+  useEffect(() => {
+    if (fullRef.current?.complete) {
+      if (fullRef.current.naturalWidth > 0) setStatus('loaded')
+      else setStatus('error')
+    } else if (blurRef.current?.complete) {
+      if (blurRef.current.naturalWidth > 0 && status === 'skeleton') setStatus('blur')
+    }
+  }, [blurSrc, fullSrc, status])
+
+  return (
+    <>
+      {(status === 'skeleton' || status === 'error') && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface)] border border-[var(--border)] rounded-xl z-0">
+          {status === 'skeleton' ? (
+            <div className="w-full h-full animate-pulse bg-[var(--border)]" />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-[var(--text-s)] gap-2">
+              <svg className="w-8 h-8 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="text-xs font-medium opacity-60">Image Unavailable</span>
+            </div>
+          )}
+        </div>
+      )}
+      <img
+        ref={blurRef}
+        src={blurSrc}
+        alt=""
+        loading="lazy"
+        className={cn(
+          "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 z-10",
+          (status === 'blur' || status === 'loaded') ? 'opacity-100' : 'opacity-0'
+        )}
+        onLoad={() => setStatus(prev => prev === 'skeleton' ? 'blur' : prev)}
+        onError={() => setStatus('error')}
+      />
+      <img
+        ref={fullRef}
+        src={fullSrc}
+        alt=""
+        loading="lazy"
+        className={cn(
+          "relative w-full h-full object-cover transition-opacity duration-500 z-20",
+          status === 'loaded' ? 'opacity-100' : 'opacity-0'
+        )}
+        onLoad={() => setStatus('loaded')}
+        onError={() => setStatus('error')}
+      />
+    </>
   )
 }
 
@@ -170,6 +240,8 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
   const [liked, setLiked] = useState(false)
   const [localLikes, setLocalLikes] = useState(post.likes)
   const [expanded, setExpanded] = useState(false)
+  const [isDeleted, setIsDeleted] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const queryClient = useQueryClient()
 
   const author = post.primaryAuthor
@@ -208,16 +280,22 @@ export function PostCard({ post, currentUserId }: { post: Post, currentUserId?: 
       }
     },
     onError: (err) => {
+      setIsDeleted(false) // Rollback optimistic deletion
       alert(err.message || 'Failed to delete post')
     }
   })
 
   function handleDelete() {
-    if (deleteMutation.isPending) return
+    if (deleteMutation.isPending || isPending) return
     if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+      startTransition(() => {
+        setIsDeleted(true)
+      })
       deleteMutation.mutate()
     }
   }
+
+  if (isDeleted) return null
 
   return (
     <article className="px-4 py-4 border-b transition-colors" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>

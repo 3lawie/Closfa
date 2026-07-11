@@ -91,11 +91,11 @@ export function MediaContatiner() {
             const newMedia: MediaType = {
                 mediaId,
                 originalMedia: {
-                    mediaId, // Added from recent schema update
+                    media_id: mediaId, // Match updated MediaZod schema
                     fileName: file.name,
                     fileSize: file.size,
                     mimeType: file.type as typeof ALLOWED_MEDIA_TYPES[number],
-                    mediaType: mediaType,
+                    media_type: mediaType,
                     ...dims,
                 },
                 editedMedia: undefined,
@@ -282,7 +282,7 @@ const MediaCard = ({ media, index, removeMedia, colSpan, rowSpan, isTiny, onDrag
                 </p>
             </div>
 
-            {media.originalMedia.mediaType === 'video' ? (
+            {media.originalMedia.media_type === 'video' ? (
                 <video
                     src={media.reader}
                     className={`w-full h-full ${isTiny ? 'object-contain p-4' : 'object-cover'}`}

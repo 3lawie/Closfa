@@ -150,10 +150,11 @@ export const deletePost = createServerFn({ method: 'POST' })
             
             // Try to delete from ImageKit
             try {
-              const searchUrl = `https://api.imagekit.io/v1/files?searchQuery=name="${m.fileName}"`
+              // Search by mediaUrl (the actual stored path/name), not the original fileName
+              const searchUrl = `https://api.imagekit.io/v1/files?searchQuery=name="${m.mediaUrl}"`
               const searchRes = await fetch(searchUrl, { headers: { Authorization: `Basic ${ikAuth}` } })
               if (searchRes.ok) {
-                const data = await searchRes.json()
+                const data = (await searchRes.json()) as { fileId: string }[]
                 for (const file of data) {
                   await fetch(`https://api.imagekit.io/v1/files/${file.fileId}`, {
                     method: 'DELETE',
@@ -162,7 +163,7 @@ export const deletePost = createServerFn({ method: 'POST' })
                 }
               }
             } catch (err) {
-              logger.warn(`Failed to delete media from ImageKit: ${m.fileName}`, { postId }, err instanceof Error ? err : undefined)
+              logger.warn(`Failed to delete media from ImageKit: ${m.mediaUrl}`, { postId, error: err instanceof Error ? err.message : 'Unknown error' })
             }
           }
         }

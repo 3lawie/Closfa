@@ -59,10 +59,10 @@ function CreatePost() {
                     publicKey: clientEnv.imagekitPublicKey,
                 })
                 if (!response?.filePath) throw new Error(`Upload failed for ${m.fileName}`)
-                const { mediaType, fileName, mimeType, fileSize, width, height, duration } = m.metadata.originalMedia
+                const { media_type, fileName, mimeType, fileSize, width, height, duration } = m.metadata.originalMedia
                 media.push({
                     mediaUrl: response.filePath.replace(/^\//, ""),
-                    mediaType,
+                    mediaType: media_type,
                     fileName,
                     mimeType,
                     fileSize,
