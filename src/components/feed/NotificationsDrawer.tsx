@@ -10,7 +10,6 @@ import {
   Reply,
   UserPlus,
   AtSign,
-  Info,
   ShieldAlert,
   Bell,
   BellOff,
@@ -65,7 +64,6 @@ export function NotificationsDrawer() {
       case 'reply': return <Reply className="w-5 h-5" />
       case 'follow': return <UserPlus className="w-5 h-5" />
       case 'mention': return <AtSign className="w-5 h-5" />
-      case 'system': return <Info className="w-5 h-5" />
       case 'moderation': return <ShieldAlert className="w-5 h-5" />
       case 'collab_invite': return <Users className="w-5 h-5" />
       default: return <Bell className="w-5 h-5" />

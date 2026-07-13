@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['.next', 'dist', 'src/routeTree.gen.ts']),
+  globalIgnores(['.next', 'dist', 'src/routeTree.gen.ts', 'to read']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

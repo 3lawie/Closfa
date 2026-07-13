@@ -13,5 +13,11 @@ export default defineConfig({
     tsconfigPaths(),
     tailwindcss(),
   ],
+  server: {
+    // "to read" is vendored reference material (other projects, kept around
+    // for manual reading only) — not part of this app, so the dev server's
+    // file watcher shouldn't walk or react to changes inside it.
+    watch: { ignored: ['**/to read/**'] },
+  },
 })
 

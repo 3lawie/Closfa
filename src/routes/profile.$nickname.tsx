@@ -2,9 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { getUserProfileFn } from '@/server/actions/Database/services/user.service'
 import { PostCard } from '@/components/feed/PostCard'
 import { EditProfileModal } from '@/components/profile/EditProfileModal'
+import { ManageTeamModal } from '@/components/profile/ManageTeamModal'
 import type { Post } from '@/lib/entities/Post'
 import { followUser, unfollowUser } from '@/server/actions/Database/services/follow.service'
-import { useMutation } from '@tanstack/react-query'
+import { getMyProfilePermissionFn } from '@/server/actions/Database/services/moderation.service'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
@@ -24,10 +26,19 @@ function ProfilePage() {
   const { session, profileData } = Route.useLoaderData()
   const router = useRouter()
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isTeamOpen, setIsTeamOpen] = useState(false)
 
   // Hooks above this line must run on every render regardless of profileData
   // (rules-of-hooks) — the "not found" branch below returns before touching
   // any state derived from profileData itself.
+  const profileId = profileData?.user.profile?.profile_id
+  const myProfilePermQuery = useQuery({
+    queryKey: ['myProfilePermission', profileId],
+    queryFn: () => getMyProfilePermissionFn({ data: { profileId: profileId! } }),
+    enabled: !!session && !!profileId,
+  })
+  const canManageTeam = myProfilePermQuery.data?.authorized && myProfilePermQuery.data.canAssignModerator
+
   const isFollowing = !!profileData?.isFollowing
   const followMutation = useMutation({
     mutationFn: async () => {
@@ -112,6 +123,12 @@ function ProfilePage() {
                       Edit Profile
                     </Button>
                   )}
+
+                  {(isCurrentUser || canManageTeam) && (
+                    <Button variant="secondary" onClick={() => setIsTeamOpen(true)}>
+                      Manage Team
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -147,7 +164,12 @@ function ProfilePage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                 >
-                  <PostCard post={post as Post} currentUserId={session?.userId} />
+                  <PostCard
+                    post={post as Post}
+                    currentUserId={session?.userId}
+                    profileId={profileId}
+                    isPinned={profileId ? post.postId === user.profile?.pinnedPostId : false}
+                  />
                 </motion.div>
               ))
             ) : (
@@ -186,6 +208,15 @@ function ProfilePage() {
             hideEngagementCounts: user.profile?.hideEngagementCounts ?? false,
           }}
           initials={user.name.charAt(0).toUpperCase()}
+        />
+      )}
+
+      {(isCurrentUser || canManageTeam) && profileId && session && (
+        <ManageTeamModal
+          isOpen={isTeamOpen}
+          onClose={() => setIsTeamOpen(false)}
+          profileId={profileId}
+          currentUserId={session.userId}
         />
       )}
     </div>

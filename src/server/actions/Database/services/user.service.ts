@@ -205,9 +205,21 @@ export const getUserProfileFn = createServerFn({ method: 'GET' })
       primaryAuthor: p.primaryAuthor ? { ...p.primaryAuthor, name: safeName } : p.primaryAuthor,
     })) as unknown as typeof posts
 
+    // Surface the pinned post first, if one's set and still published — a
+    // post unpinned itself by going back to draft after being pinned should
+    // just fall back to normal chronological order, not disappear.
+    const pinnedPostId = user.profile?.pinnedPostId ?? null
+    const orderedPosts = pinnedPostId
+      ? [...sanitizedPosts].sort((a, b) => {
+          if (a.postId === pinnedPostId && a.is_published) return -1
+          if (b.postId === pinnedPostId && b.is_published) return 1
+          return 0
+        })
+      : sanitizedPosts
+
     return {
       user: sanitizedUser,
-      posts: sanitizedPosts,
+      posts: orderedPosts,
       stats: {
         followers: followers.length,
         following: following.length,

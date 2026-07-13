@@ -1,5 +1,5 @@
 import { useState, useTransition, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { Link, getRouteApi } from '@tanstack/react-router'
+import { Link, getRouteApi, useRouter } from '@tanstack/react-router'
 
 // Root-scoped Link for the "open post modal via search param" case — the
 // generic Link's search reducer can't resolve __root__'s search schema
@@ -8,11 +8,12 @@ const rootRouteApi = getRouteApi('__root__')
 import { Button } from '@/components/ui/Button'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toggleLike } from '@/server/actions/Database/services/like.service'
-import { deletePost } from '@/server/actions/Database/services/post.service'
+import { deletePost, incrementShareFn } from '@/server/actions/Database/services/post.service'
 import { reportContent } from '@/server/actions/Database/services/moderation.service'
 import { toggleSavePostFn } from '@/server/actions/Database/services/savedPost.service'
 import { blockUserFn } from '@/server/actions/Database/services/block.service'
 import { assignGlobalModeratorFn, getMyGlobalPermissionFn } from '@/server/actions/Database/services/role.service'
+import { pinPostFn, unpinPostFn, getMyProfilePermissionFn } from '@/server/actions/Database/services/moderation.service'
 import { cn } from '@/lib/utils/cn'
 import { formatRelativeTime, formatCount } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
@@ -20,6 +21,7 @@ import type { Post, Media, PostAuthor } from '@/lib/entities/Post'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ImageLightbox } from '@/components/media/ImageLightbox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
 import { toast } from '@/components/ui/Toast'
 import {
   Heart,
@@ -41,6 +43,8 @@ import {
   UserCog,
   ShieldCheck,
   ShieldPlus,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 
 function formatMediaTime(t: number) {
@@ -490,13 +494,15 @@ function ProgressiveImage({ blurSrc, fullSrc, fit = 'cover' }: { blurSrc: string
 }
 
 // ── PostCard ──────────────────────────────────────────────────
-export function PostCard({ post, currentUserId, isFocused = false }: { post: Post, currentUserId?: string, isFocused?: boolean }) {
+export function PostCard({ post, currentUserId, isFocused = false, profileId, isPinned = false }: { post: Post, currentUserId?: string, isFocused?: boolean, profileId?: string, isPinned?: boolean }) {
   const [liked, setLiked] = useState(false)
   const [localLikes, setLocalLikes] = useState(post.likes)
+  const [localShares, setLocalShares] = useState(post.shares)
   const [expanded, setExpanded] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
   const [reportReason, setReportReason] = useState('')
   const [reportDetails, setReportDetails] = useState('')
+  const [reportTurnstileToken, setReportTurnstileToken] = useState<string | undefined>(undefined)
   const queryClient = useQueryClient()
   const articleRef = useRef<HTMLElement>(null)
   const mediaGridRef = useRef<MediaGridHandle>(null)
@@ -531,11 +537,13 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
 
   const reportMutation = useMutation({
     mutationFn: (data: { reason: string, details?: string }) =>
-      reportContent({ data: { targetType: 'post', targetId: post.postId, reason: data.reason, details: data.details } }),
-    onSuccess: () => {
+      reportContent({ data: { targetType: 'post', targetId: post.postId, reason: data.reason, details: data.details, turnstileToken: reportTurnstileToken } }),
+    onSuccess: (res) => {
+      if (!res.ok) { toast(res.message, { variant: 'danger' }); return }
       setShowReportDialog(false)
       setReportReason('')
       setReportDetails('')
+      setReportTurnstileToken(undefined)
       toast('Post reported. Thank you.', { variant: 'success' })
     }
   })
@@ -596,15 +604,24 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
     },
   })
 
+  const shareMutation = useMutation({
+    mutationFn: () => incrementShareFn({ data: { postId: post.postId } }),
+    onSuccess: () => setLocalShares((n) => n + 1),
+  })
+
   async function handleShare() {
     const url = `${window.location.origin}/post/${post.postId}`
     if (navigator.share) {
-      try { await navigator.share({ url }) } catch { /* user cancelled the share sheet */ }
+      try {
+        await navigator.share({ url })
+        shareMutation.mutate()
+      } catch { /* user cancelled the share sheet — don't count it */ }
       return
     }
     try {
       await navigator.clipboard.writeText(url)
       toast('Link copied to clipboard', { variant: 'success' })
+      shareMutation.mutate()
     } catch {
       // Clipboard API unavailable/denied — show the link itself so it can
       // still be copied by hand; no auto-dismiss so there's time to select it.
@@ -694,6 +711,31 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
     },
   })
 
+  // Pin/unpin — only meaningful in a profile-page context (profileId passed
+  // down), not in the general feed. Gates on the profile-scoped permission,
+  // distinct from the global canAssignModerator/canDeleteContent above.
+  const pinPermQuery = useQuery({
+    queryKey: ['myProfilePermission', profileId],
+    queryFn: () => getMyProfilePermissionFn({ data: { profileId: profileId! } }),
+    enabled: !!profileId && !!currentUserId,
+  })
+  const canPinPost = pinPermQuery.data?.authorized && pinPermQuery.data.canPinPost
+  const router = useRouter()
+  const pinMutation = useMutation({
+    mutationFn: () => pinPostFn({ data: { postId: post.postId, profileId: profileId! } }),
+    onSuccess: (res) => {
+      if (!res.ok) { toast(res.message, { variant: 'danger' }); return }
+      router.invalidate()
+    },
+  })
+  const unpinMutation = useMutation({
+    mutationFn: () => unpinPostFn({ data: { profileId: profileId! } }),
+    onSuccess: (res) => {
+      if (!res.ok) { toast(res.message, { variant: 'danger' }); return }
+      router.invalidate()
+    },
+  })
+
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false)
   const upgradeMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -751,6 +793,17 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
               className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
               title={saved ? 'Unsave post' : 'Save post'}>
               <Bookmark className="w-4 h-4" fill={saved ? 'currentColor' : 'none'} />
+            </Button>
+          )}
+          {profileId && (currentUserId === author?.userId || canPinPost) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => (isPinned ? unpinMutation.mutate() : pinMutation.mutate())}
+              isPending={pinMutation.isPending || unpinMutation.isPending}
+              className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+              title={isPinned ? 'Unpin from profile' : 'Pin to profile'}>
+              {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
             </Button>
           )}
           {currentUserId === author?.userId ? (
@@ -895,7 +948,7 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
           <div className="p-1.5 rounded-full group-hover:bg-accent-bg transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]">
             <Share2 className="w-4 h-4 transition-transform group-hover:scale-110" />
           </div>
-          {!hideEngagementCounts && <span>{formatCount(post.shares)}</span>}
+          {!hideEngagementCounts && <span>{formatCount(localShares)}</span>}
         </button>
 
         {!hideEngagementCounts && (
@@ -943,27 +996,33 @@ export function PostCard({ post, currentUserId, isFocused = false }: { post: Pos
               </div>
 
               {reportReason && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6">
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 flex flex-col gap-4">
                   <textarea
                     placeholder="Additional details (optional)..."
                     value={reportDetails}
                     onChange={(e) => setReportDetails(e.target.value)}
                     className="w-full bg-bg border border-border rounded-lg p-3 text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent-border resize-none h-24"
                   />
+                  <TurnstileWidget onVerify={setReportTurnstileToken} />
                 </motion.div>
               )}
 
               <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-border">
                 <Button
                   variant="ghost"
-                  onClick={() => setShowReportDialog(false)}
+                  onClick={() => {
+                    setShowReportDialog(false)
+                    setReportReason('')
+                    setReportDetails('')
+                    setReportTurnstileToken(undefined)
+                  }}
                 >
                   Cancel
                 </Button>
                 <Button
                   variant="destructive"
                   onClick={() => reportMutation.mutate({ reason: reportReason, details: reportDetails })}
-                  disabled={!reportReason}
+                  disabled={!reportReason || !reportTurnstileToken}
                   isPending={reportMutation.isPending}
                 >
                   Submit Report

@@ -1,10 +1,11 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { PostCard } from '@/components/feed/PostCard'
 import { CommentItem } from '@/components/feed/CommentItem'
 import { CommentComposer } from '@/components/feed/CommentComposer'
-import { getPostFn } from '@/server/actions/Database/services/post.service'
+import { getPostFn, recordPostViewFn } from '@/server/actions/Database/services/post.service'
 import type { Post } from '@/lib/entities/Post'
 import { motion } from 'framer-motion'
 import { Loader2, MessageSquare } from 'lucide-react'
@@ -22,6 +23,12 @@ export function PostModal() {
     queryFn: () => getPostFn({ data: { postId: postId! } }),
     enabled: !!postId,
   })
+
+  // One record per opened postId, not per re-render — mirrors post.$postId.tsx.
+  useEffect(() => {
+    if (postId) recordPostViewFn({ data: { postId } })
+     
+  }, [postId])
 
   const handleClose = () => {
     // Navigate without the post search param

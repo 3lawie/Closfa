@@ -135,6 +135,12 @@ export const profile = pgTable("profile", {
     // pattern Instagram/Twitter both eventually shipped as an anti-anxiety
     // opt-in, not a change to what's stored or what anyone else sees.
     hideEngagementCounts: boolean("hide_engagement_counts").notNull().default(false),
+    // Single pinned post shown first on the profile page. Nullable — most
+    // profiles pin nothing. No delete-time cleanup needed: this codebase never
+    // hard-deletes a post row (deletePostRecord only flips post_status to
+    // 'removed'), so the FK is never actually violated — the profile route
+    // just needs to skip rendering a pin whose post_status isn't published.
+    pinnedPostId: varchar("pinned_post_id").references(() => post.postId),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 })
@@ -298,7 +304,7 @@ export const report = pgTable("report", {
 
 export const auditActionEnum = pgEnum("audit_action", [
     "delete_post", "delete_comment", "ban_user", "warn_user",
-    "assign_role", "revoke_role", "hide_content"
+    "assign_role", "revoke_role", "hide_content", "verify_user"
 ])
 
 export const auditLog = pgTable("audit_log", {

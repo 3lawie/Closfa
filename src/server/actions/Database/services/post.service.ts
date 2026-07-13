@@ -6,7 +6,7 @@ import { schema } from '@/server/db/schema'
 import { queries } from '@/server/queries'
 import { verifyIsOwner } from '../verifiers/auth'
 import { getGlobalPermission } from '../verifiers/permissions'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
 import { notifyMentions } from './notification.service'
@@ -416,5 +416,53 @@ export const setOwnPostVisibilityFn = createServerFn({ method: 'POST' })
     } catch (e) {
       logger.error('setOwnPostVisibility failed', { userId, postId }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to update visibility')
+    }
+  })
+
+/**
+ * Bump the denormalized `post.views` counter by one. Public (guests and
+ * users), matching getPostFn's own reach — a post detail view counts
+ * regardless of login state. Fire-and-forget on the caller's side; no
+ * idempotency (unlike postLike/savedPost) since a view is a moment, not a
+ * per-user relation worth deduplicating.
+ */
+export const recordPostViewFn = createServerFn({ method: 'POST' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1) }))
+  .handler(async ({ data }): Promise<ServerResult<{ views: number }>> => {
+    const { postId } = data
+    try {
+      const [row] = await db
+        .update(schema.post)
+        .set({ views: sql`${schema.post.views} + 1` })
+        .where(eq(schema.post.postId, postId))
+        .returning({ views: schema.post.views })
+
+      if (!row) return err('NOT_FOUND', 'Post not found')
+      return ok({ views: row.views })
+    } catch (e) {
+      logger.error('recordPostView failed', { postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to record view')
+    }
+  })
+
+/** Bump the denormalized `post.shares` counter by one — same reach as recordPostViewFn. */
+export const incrementShareFn = createServerFn({ method: 'POST' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1) }))
+  .handler(async ({ data }): Promise<ServerResult<{ shares: number }>> => {
+    const { postId } = data
+    try {
+      const [row] = await db
+        .update(schema.post)
+        .set({ shares: sql`${schema.post.shares} + 1` })
+        .where(eq(schema.post.postId, postId))
+        .returning({ shares: schema.post.shares })
+
+      if (!row) return err('NOT_FOUND', 'Post not found')
+      return ok({ shares: row.shares })
+    } catch (e) {
+      logger.error('incrementShare failed', { postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to record share')
     }
   })

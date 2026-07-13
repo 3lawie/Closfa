@@ -73,11 +73,13 @@ function keywordExclusionRaw(keywords: string[]) {
 // src/lib/entities/Post.ts already opts out of relying on inferred types
 // for exactly this reason.
 type ProfileWithAvatar = {
+  profile_id: string
   bio: string | null
   website: string | null
   location: string | null
   isVerified: boolean
   hideEngagementCounts: boolean
+  pinnedPostId: string | null
   avatarMedia: { mediaUrl: string } | null
 }
 type UserWithProfile = {

@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { getPostFn } from '@/server/actions/Database/services/post.service'
+import { useEffect } from 'react'
+import { getPostFn, recordPostViewFn } from '@/server/actions/Database/services/post.service'
 import { PostCard } from '@/components/feed/PostCard'
 import { CommentItem } from '@/components/feed/CommentItem'
 import { CommentComposer } from '@/components/feed/CommentComposer'
@@ -27,6 +28,13 @@ function PostDetailPage() {
     queryFn: () => getPostFn({ data: { postId: params.postId } }),
     initialData: initialPost,
   })
+
+  // Fire-and-forget — a view is a moment, not worth blocking render on or
+  // retrying; one record per postId visited, not per re-render.
+  useEffect(() => {
+    recordPostViewFn({ data: { postId: params.postId } })
+     
+  }, [params.postId])
 
   return (
     <div className="min-h-screen bg-bg text-text">

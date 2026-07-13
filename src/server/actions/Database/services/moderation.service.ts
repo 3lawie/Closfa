@@ -2,13 +2,13 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { schema, profileRoleEnum } from '@/server/db/schema'
 import { getProfilePermission, ROLE_LEVELS, getGlobalPermission } from '../verifiers/permissions'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
 import { verifyTurnstileToken } from '@/server/lib/turnstile'
-import { queries } from '@/server/queries'
+import { queries, w } from '@/server/queries'
 import { deletePostRecord } from './post.service'
 
 /** Only real member roles are assignable — `owner` is the profile creator, not grantable. */
@@ -64,6 +64,98 @@ export const assignModerator = createServerFn({ method: 'POST' })
     }
   })
 
+const removeModeratorInput = z.object({
+  targetUserId: z.string().min(1),
+  profileId: z.string().min(1),
+})
+type RemoveModeratorInput = z.infer<typeof removeModeratorInput>
+
+/** Inverse of assignModerator — same authorization gate, since granting and revoking team access are symmetric privileges. */
+export const removeModerator = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(removeModeratorInput)
+  .handler(async ({ data, context }: { data: RemoveModeratorInput; context: { session: { userId: string } } }): Promise<ServerResult<{ targetUserId: string }>> => {
+    const { userId } = context.session
+    const { targetUserId, profileId } = data
+
+    try {
+      const perm = await getProfilePermission(userId, profileId)
+      if (!perm.authorized || !perm.canAssignModerator) {
+        return err('FORBIDDEN', 'Insufficient permissions to remove a team member')
+      }
+
+      const target = await db.query.profileMember.findFirst({
+        where: w({ profileId, userId: targetUserId }),
+      })
+      if (!target) {
+        return err('BAD_REQUEST', 'That user is not on this profile\'s team')
+      }
+
+      // Leaving the team yourself is always allowed — you can only ever drop
+      // your own privilege, never someone else's, so it bypasses the
+      // escalation check below (which exists to stop A demoting/removing B).
+      const isSelfRemoval = targetUserId === userId
+      if (!isSelfRemoval && perm.level <= ROLE_LEVELS[target.role as keyof typeof ROLE_LEVELS]) {
+        return err('FORBIDDEN', 'You cannot remove a team member at or above your own level')
+      }
+
+      await db.delete(schema.profileMember)
+        .where(and(eq(schema.profileMember.profileId, profileId), eq(schema.profileMember.userId, targetUserId)))
+
+      await db.insert(schema.auditLog).values({
+        actorId: userId,
+        action: 'revoke_role',
+        targetType: 'user',
+        targetId: targetUserId,
+        reason: `Removed role ${target.role} from profile ${profileId}`,
+      })
+
+      return ok({ targetUserId })
+    } catch (e) {
+      logger.error('removeModerator failed', { userId, profileId, targetUserId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to remove team member')
+    }
+  })
+
+/** Current viewer's own profile-scoped permission flags — lets the UI decide whether to render assign/remove controls at all. */
+export const getMyProfilePermissionFn = createServerFn({ method: 'GET' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ profileId: z.string().min(1) }))
+  .handler(async ({ data, context }) => {
+    return await getProfilePermission(context.session.userId, data.profileId)
+  })
+
+export type ProfileModeratorRow = {
+  userId: string
+  role: 'co_owner' | 'vip_moderator' | 'moderator'
+  assignedAt: Date | null
+  user: { userId: string; name: string; nickname: string | null } | null
+}
+
+/** Roster of a profile's mod team — read-only, gated on plain team membership (not canAssignModerator) so any member can view who else is on the team. */
+export const getModeratorsFn = createServerFn({ method: 'GET' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ profileId: z.string().min(1) }))
+  .handler(async ({ data, context }): Promise<ServerResult<ProfileModeratorRow[]>> => {
+    const perm = await getProfilePermission(context.session.userId, data.profileId)
+    if (!perm.authorized) {
+      return err('FORBIDDEN', 'You are not on this profile\'s team')
+    }
+
+    try {
+      const members = await queries.profile.getModerators(data.profileId)
+      // profileMember has two FKs to `user` (userId and assignedBy); Drizzle's
+      // relational query builder mistypes the disambiguated one-to-one `user`
+      // relation as an array here even though the config declares `r.one.user`
+      // and the runtime result is always a single row (or null) per member —
+      // this cast corrects the type, it doesn't change behavior.
+      return ok(members as unknown as ProfileModeratorRow[])
+    } catch (e) {
+      logger.error('getModerators failed', { profileId: data.profileId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to load team roster')
+    }
+  })
+
 const reportInput = z.object({
   targetType: z.enum(['post', 'comment', 'user']),
   targetId: z.string().min(1),
@@ -80,8 +172,8 @@ export const reportContent = createServerFn({ method: 'POST' })
     const { userId } = context.session
     const reportData = data
 
-    // Bot gate on the abuse-prone report form (no report UI exists yet —
-    // when one is built it must render TurnstileWidget and pass the token).
+    // Bot gate on the abuse-prone report form — PostCard.tsx's report dialog
+    // renders TurnstileWidget and passes the resulting token here.
     const human = await verifyTurnstileToken(reportData.turnstileToken)
     if (!human) {
       return err('FORBIDDEN', 'Verification failed — please retry the challenge.')
@@ -242,5 +334,64 @@ export const resolveReportFn = createServerFn({ method: 'POST' })
     } catch (e) {
       logger.error('resolveReport failed', { userId, reportId }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to resolve report')
+    }
+  })
+
+const pinPostInput = z.object({ postId: z.string().min(1), profileId: z.string().min(1) })
+
+/** Pin one of the profile owner's own posts to the top of their profile page. Single pin — setting a new one replaces the old. */
+export const pinPostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(pinPostInput)
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: string }>> => {
+    const { userId } = context.session
+    const { postId, profileId } = data
+
+    try {
+      const perm = await getProfilePermission(userId, profileId)
+      if (!perm.authorized || !perm.canPinPost) {
+        return err('FORBIDDEN', 'Insufficient permissions to pin a post on this profile')
+      }
+
+      const profile = await db.query.profile.findFirst({ where: w({ profile_id: profileId }) })
+      if (!profile) return err('NOT_FOUND', 'Profile not found')
+
+      const [post] = await db.select({ author_id: schema.post.author_id, is_published: schema.post.is_published }).from(schema.post).where(eq(schema.post.postId, postId))
+      if (!post) return err('NOT_FOUND', 'Post not found')
+      if (post.author_id !== profile.userId) {
+        return err('BAD_REQUEST', 'Only the profile owner\'s own posts can be pinned to it')
+      }
+      if (!post.is_published) {
+        return err('BAD_REQUEST', 'Only a published post can be pinned')
+      }
+
+      await db.update(schema.profile).set({ pinnedPostId: postId, updatedAt: new Date() }).where(eq(schema.profile.profile_id, profileId))
+
+      return ok({ postId })
+    } catch (e) {
+      logger.error('pinPost failed', { userId, profileId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to pin post')
+    }
+  })
+
+export const unpinPostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ profileId: z.string().min(1) }))
+  .handler(async ({ data, context }): Promise<ServerResult<{ profileId: string }>> => {
+    const { userId } = context.session
+    const { profileId } = data
+
+    try {
+      const perm = await getProfilePermission(userId, profileId)
+      if (!perm.authorized || !perm.canPinPost) {
+        return err('FORBIDDEN', 'Insufficient permissions to unpin a post on this profile')
+      }
+
+      await db.update(schema.profile).set({ pinnedPostId: null, updatedAt: new Date() }).where(eq(schema.profile.profile_id, profileId))
+
+      return ok({ profileId })
+    } catch (e) {
+      logger.error('unpinPost failed', { userId, profileId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to unpin post')
     }
   })

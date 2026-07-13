@@ -10,6 +10,7 @@ import {
   redeemRoleKeyFn,
   assignGlobalModeratorFn,
   revokeGlobalRoleFn,
+  setVerifiedFn,
 } from '@/server/actions/Database/services/role.service'
 import { searchUsersByNicknameFn } from '@/server/actions/Database/services/user.service'
 import { getBlockedUsersFn, unblockUserFn } from '@/server/actions/Database/services/block.service'
@@ -155,6 +156,14 @@ function ModeratorSearchSection() {
     onError: () => setAssignMessage('An error occurred — please try again.'),
   })
 
+  const verifyMutation = useMutation({
+    mutationFn: (vars: { targetUserId: string; verified: boolean }) => setVerifiedFn({ data: vars }),
+    onSuccess: (res) => {
+      setAssignMessage(res.ok ? (res.data.verified ? 'User verified.' : 'Verification revoked.') : res.message)
+    },
+    onError: () => setAssignMessage('An error occurred — please try again.'),
+  })
+
   return (
     <section className="bg-surface border border-border rounded-lg p-6 shadow-sm space-y-4">
       <div className="flex items-center gap-3">
@@ -204,6 +213,23 @@ function ModeratorSearchSection() {
                   title="Revoke this user's site role, if they have one"
                 >
                   <ShieldOff className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => verifyMutation.mutate({ targetUserId: u.userId, verified: true })}
+                  isPending={verifyMutation.isPending}
+                >
+                  Verify
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => verifyMutation.mutate({ targetUserId: u.userId, verified: false })}
+                  isPending={verifyMutation.isPending}
+                  title="Revoke this user's verified badge"
+                >
+                  Unverify
                 </Button>
               </div>
             </li>

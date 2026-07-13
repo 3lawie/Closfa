@@ -299,3 +299,43 @@ export const assignGlobalModeratorFn = createServerFn({ method: 'POST' })
       return err('INTERNAL_ERROR', 'Failed to assign moderator')
     }
   })
+
+/**
+ * Manual admin-only verification grant/revoke — mirrors every other
+ * privileged toggle in this file: reuses the global-role permission system
+ * rather than any criteria-based/automatic path.
+ */
+export const setVerifiedFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ targetUserId: z.string().min(1), verified: z.boolean() }))
+  .handler(async ({ data, context }): Promise<ServerResult<{ targetUserId: string; verified: boolean }>> => {
+    const { userId } = context.session
+    const { targetUserId, verified } = data
+
+    try {
+      const perm = await getGlobalPermission(userId)
+      if (!perm.authorized || !perm.canAssignModerator) {
+        return err('FORBIDDEN', 'Insufficient permissions to verify a user')
+      }
+
+      const [updated] = await db.update(schema.profile)
+        .set({ isVerified: verified, updatedAt: new Date() })
+        .where(eq(schema.profile.userId, targetUserId))
+        .returning({ profile_id: schema.profile.profile_id })
+
+      if (!updated) return err('NOT_FOUND', 'That user has no profile to verify')
+
+      await db.insert(schema.auditLog).values({
+        actorId: userId,
+        action: 'verify_user',
+        targetType: 'user',
+        targetId: targetUserId,
+        reason: verified ? 'Granted verification' : 'Revoked verification',
+      })
+
+      return ok({ targetUserId, verified })
+    } catch (e) {
+      logger.error('setVerified failed', { userId, targetUserId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to update verification status')
+    }
+  })
