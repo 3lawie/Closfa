@@ -4,4 +4,4 @@ import { createRouter } from './router'
 
 const router = createRouter()
 
-hydrateRoot(document, <StartClient />)
+hydrateRoot(document, <StartClient/>)

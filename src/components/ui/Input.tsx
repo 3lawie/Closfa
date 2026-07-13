@@ -10,24 +10,27 @@ export function Input({ label, error, className, id, ...props }: InputProps) {
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={inputId} className="text-sm font-medium text-gray-700">
+        <label
+          htmlFor={inputId}
+          className="text-text-s font-medium"
+        >
           {label}
         </label>
       )}
       <input
         id={inputId}
         className={cn(
-          'w-full px-3 py-2 text-sm rounded-lg border bg-white',
-          'placeholder:text-gray-400',
-          'focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400',
-          error ? 'border-red-300 bg-red-50' : 'border-gray-200',
-          className,
+          "flex h-10 w-full rounded-md border border-border bg-bg px-3 py-2 text-text",
+          "placeholder:text-text-s",
+          "transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
+          "focus:outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border",
+          className
         )}
         {...props}
       />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-danger text-xs">{error}</p>}
     </div>
   )
 }
@@ -41,24 +44,27 @@ export function Textarea({ label, error, className, id, ...props }: TextareaProp
   const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={textareaId} className="text-sm font-medium text-gray-700">
+        <label
+          htmlFor={textareaId}
+          className="text-text-s font-medium"
+        >
           {label}
         </label>
       )}
       <textarea
         id={textareaId}
         className={cn(
-          'w-full px-3 py-2 text-sm rounded-lg border bg-white resize-none',
-          'placeholder:text-gray-400',
-          'focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400',
-          error ? 'border-red-300 bg-red-50' : 'border-gray-200',
-          className,
+          "flex min-h-[80px] w-full rounded-md border border-border bg-bg px-3 py-2 text-text",
+          "placeholder:text-text-s",
+          "transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
+          "focus:outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border",
+          className
         )}
         {...props}
       />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-danger text-xs">{error}</p>}
     </div>
   )
 }

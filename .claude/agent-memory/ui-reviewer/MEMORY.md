@@ -1,0 +1,2 @@
+- [Color contrast audit 2026-07-13](project_color_contrast_audit_2026-07-13.md) — two root-cause bugs (dead `.dark` accent cascade, accent/brand too light for light-mode text) behind the app's "bad hover contrast" reports
+- [OKLCH contrast estimation method](feedback_contrast_estimation_method.md) — how to compute WCAG contrast from OKLCH tokens by hand (L³ for grays, full OKLab matrix for chromatic)

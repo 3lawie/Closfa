@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useRef, useState, useEffect } from 'react'
 import { clientEnv } from '@/lib/env/client-env'
 import { createServerFn } from '@tanstack/react-start'
+import { cn } from '@/lib/utils/cn'
+import { Loader2, AlertCircle } from 'lucide-react'
 
 // ──────────────────────────────────────────────────────────────
 // ImageRenderer — two-phase lazy loading via IntersectionObserver
@@ -133,10 +135,15 @@ export default function ImageRenderer({
     return (
       <div
         ref={ref}
-        className="rounded-xl bg-gray-200 animate-pulse flex items-center justify-center"
-        style={{ width, height }}
-      >
-        <span className="text-gray-400 text-sm">Loading…</span>
+        className={cn(
+          'flex items-center justify-center bg-surface rounded-md overflow-hidden',
+          'text-text-s text-center px-4'
+        )}
+        style={{ width, height }}>
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-text-h" />
+          <span>Loading…</span>
+        </div>
       </div>
     )
   }
@@ -144,32 +151,40 @@ export default function ImageRenderer({
   if (meta.isError) {
     return (
       <div
-        className="rounded-xl bg-red-50 border border-red-200 flex items-center justify-center"
-        style={{ width, height }}
-      >
-        <span className="text-red-400 text-sm">Failed to load image</span>
+        className={cn(
+          'flex items-center justify-center bg-surface rounded-md overflow-hidden',
+          'text-text-s text-text-h text-center px-4'
+        )}
+        style={{ width, height }}>
+        <div className="flex flex-col items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-danger" />
+          <span>Failed to load image</span>
+        </div>
       </div>
     )
   }
 
   return (
-    <div ref={ref} className="flex flex-col gap-2">
+    <div ref={ref} className="group relative overflow-hidden rounded-md">
       <img
         src={meta.data!.displayUrl}
         alt={alt}
         loading="lazy"
-        className="rounded-xl object-cover"
+        className="block object-cover"
         width={width}
         height={height}
+        style={{ width, height }}
       />
       {dimensions.data && (
-        <p className="text-xs text-gray-400">
-          {dimensions.data.width}×{dimensions.data.height} px
-          {' · '}
-          {meta.data!.contentType}
-          {' · '}
-          {Math.round(Number(meta.data!.size) / 1024)} KB
-        </p>
+        <div className="absolute bottom-0 left-0 right-0 p-2 bg-surface-translucent backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--motion-base)]">
+          <p className="text-[10px] text-text-s leading-tight">
+            {dimensions.data.width}×{dimensions.data.height} px
+            {' · '}
+            {meta.data!.contentType}
+            {' · '}
+            {Math.round(Number(meta.data!.size) / 1024)} KB
+          </p>
+        </div>
       )}
     </div>
   )

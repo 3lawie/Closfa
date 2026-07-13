@@ -1,52 +1,43 @@
-// ──────────────────────────────────────────────────────────────
-// PostCardSkeleton — shimmer placeholder while posts are loading.
-// Mirrors the exact structure of PostCard so the layout
-// doesn't shift when real content replaces it.
-// ──────────────────────────────────────────────────────────────
-
 export function PostCardSkeleton() {
   return (
     <div
-      className="px-4 py-4 border-b"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+      className="px-2 pt-5 pb-6 border-b border-border animate-pulse"
       aria-hidden
     >
       {/* Header */}
-      <div className="flex items-start gap-3">
-        {/* Avatar circle */}
-        <div className="skeleton w-10 h-10 rounded-full flex-shrink-0" />
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {/* Avatar circle */}
+          <div className="w-10 h-10 rounded-full bg-surface-translucent shrink-0" />
 
-        <div className="flex-1 pt-0.5 flex flex-col gap-2">
-          {/* Name + time row */}
-          <div className="flex items-center justify-between">
-            <div className="skeleton h-3.5 w-28 rounded" />
-            <div className="skeleton h-3 w-10 rounded" />
+          <div className="flex flex-col gap-1.5">
+            {/* Name + time row */}
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-24 bg-surface-translucent rounded-md" />
+              <div className="h-3 w-12 bg-surface-translucent rounded-md" />
+            </div>
+            {/* @nickname */}
+            <div className="h-3 w-20 bg-surface-translucent rounded-md" />
           </div>
-          {/* @nickname */}
-          <div className="skeleton h-3 w-20 rounded" />
         </div>
       </div>
 
       {/* Content lines */}
-      <div className="mt-3 ml-[52px] flex flex-col gap-2">
-        <div className="skeleton h-3.5 w-full rounded" />
-        <div className="skeleton h-3.5 w-5/6 rounded" />
-        <div className="skeleton h-3.5 w-4/6 rounded" />
-        {/* Category pill */}
-        <div className="skeleton h-5 w-16 rounded-full mt-1" />
+      <div className="flex flex-col gap-2 mb-4">
+        <div className="h-4 w-full bg-surface-translucent rounded-md" />
+        <div className="h-4 w-[90%] bg-surface-translucent rounded-md" />
+        <div className="h-4 w-[60%] bg-surface-translucent rounded-md" />
       </div>
 
-      {/* Image placeholder (shown on every other card to vary the layout) */}
-      <div className="mt-3 ml-[52px]">
-        <div className="skeleton w-full rounded-xl" style={{ height: 200 }} />
-      </div>
+      {/* Media block simulation (mirrors PostCard's expected layout) */}
+      <div className="h-48 w-full bg-surface-translucent rounded-lg mb-4" />
 
       {/* Action row */}
-      <div className="mt-3 ml-[52px] flex items-center gap-6">
-        <div className="skeleton h-4 w-10 rounded" />
-        <div className="skeleton h-4 w-10 rounded" />
-        <div className="skeleton h-4 w-8 rounded" />
-        <div className="ml-auto skeleton h-4 w-12 rounded" />
+      <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border">
+        <div className="h-8 w-12 bg-surface-translucent rounded-full" />
+        <div className="h-8 w-12 bg-surface-translucent rounded-full" />
+        <div className="h-8 w-12 bg-surface-translucent rounded-full" />
+        <div className="h-8 w-12 bg-surface-translucent rounded-full ml-auto" />
       </div>
     </div>
   )
@@ -55,10 +46,10 @@ export function PostCardSkeleton() {
 /** 3 stacked skeletons — used on initial load */
 export function FeedSkeleton() {
   return (
-    <>
+    <div className="flex flex-col gap-2 mt-4">
       <PostCardSkeleton />
       <PostCardSkeleton />
       <PostCardSkeleton />
-    </>
+    </div>
   )
 }

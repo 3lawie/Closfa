@@ -1,34 +1,115 @@
 @import "tailwindcss";
 
 /* ────────────────────────────────────────────────────────────
-   Closfa Redesigned Design System
+   Closfa Design System — zero-state reconstruction
+   ────────────────────────────────────────────────────────────
+   Two independent axes:
+     1. light/dark — governs --bg/--surface/--text neutrals (.dark)
+     2. data-theme — governs --accent, --r-*, --motion-* "personality"
+        (rest/awareness/warmth/anger/relief), independent of light/dark
+        so all 25 combinations stay correct without being enumerated.
+
+   Runtime (swappable) vars use bare names; @theme below re-exposes them
+   under Tailwind's required --color-*, --radius-*, --shadow-* prefixes via
+   var() indirection — this avoids a var() naming collision that would
+   occur if the same name were declared in both places (see brand/accent,
+   the pattern this file already established).
+
+   Motion tokens (--motion-*) have no Tailwind theme namespace equivalent;
+   consume them via arbitrary-value classes, e.g. duration-[var(--motion-base)]
+   ease-[var(--motion-ease)]. framer-motion entrance/exit animations use
+   fixed durations per the UI_Motion skill's duration limits — motion
+   "energy" differentiation between themes shows through CSS-transition-
+   driven micro-interactions (hover/tap), which pick up these vars for free.
    ──────────────────────────────────────────────────────────── */
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-translucent: var(--surface-translucent);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-h: var(--text-h);
+  --color-text-s: var(--text-s);
+  --color-brand: var(--brand);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-border: var(--accent-border);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-mention: var(--mention);
+
+  --shadow-sm: var(--sh-sm);
+  --shadow-md: var(--sh-md);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-pill: var(--r-pill);
+}
 
 :root {
   /* OKLCH Color Space (Perceptually Uniform Lightness) */
-  --bg:                  oklch(0.98 0.005 60);    /* Pure, soft paper background */
-  --surface:             oklch(1.00 0.000 0);     /* Elevation 1 - pure white */
-  --surface-translucent: rgba(255, 255, 255, 0.75);
-  --border:              oklch(0.92 0.005 60);    /* Muted separator lines */
-  --border-strong:       oklch(0.85 0.010 60);
-  
-  /* Text */
-  --text:                oklch(0.35 0.020 280);   /* Soft graphite body text */
-  --text-h:              oklch(0.12 0.010 280);   /* Solid deep ink heading */
-  --text-s:              oklch(0.55 0.015 280);   /* Muted gray info labels */
+  --bg:                  oklch(1.00 0.000 0);
+  --surface:             oklch(1.00 0.000 0);
+  --surface-translucent: rgba(255, 255, 255, 0.85);
+  --border:              oklch(0.95 0.005 60);
+  --border-strong:       oklch(0.90 0.010 60);
 
-  /* Accents */
-  --brand:               oklch(0.76 0.180 80);    /* Brand gold/amber */
-  --accent:              oklch(0.55 0.220 295);   /* Premium Violet */
-  --accent-hover:        oklch(0.48 0.230 295);
-  --accent-bg:           oklch(0.55 0.220 295 / 0.08);
-  --accent-border:       oklch(0.55 0.220 295 / 0.25);
+  --text:                oklch(0.30 0.020 280);
+  --text-h:              oklch(0.10 0.010 280);
+  --text-s:              oklch(0.50 0.015 280);
 
-  /* Shadows */
-  --shadow-sm:           0 2px 8px oklch(0.12 0.010 280 / 0.04);
-  --shadow-md:           0 8px 30px oklch(0.12 0.010 280 / 0.08);
+  /* Restored to the original bright yellow per explicit user preference —
+     a contrast audit had darkened this to ~oklch(0.52 0.170 80) for a
+     4.5:1 WCAG text/icon ratio (it only clears ~2.75:1 at this lightness
+     against a white surface), but the darker tone read as amber/brown
+     rather than yellow, which mattered more here than the audit finding.
+     Keep this in mind before using --brand as small body text on white. */
+  --brand:               oklch(0.70 0.200 80);
 
-  /* Typography */
+  /* Fixed — deliberately NOT theme-dependent, so destructive actions read
+     the same regardless of the active emotional theme (even "anger", whose
+     own accent happens to also be red). */
+  --danger:              oklch(0.58 0.220 25);
+  --danger-hover:        oklch(0.50 0.220 25);
+
+  --sh-sm:               0 2px 8px oklch(0.12 0.010 280 / 0.04);
+  --sh-md:               0 8px 30px oklch(0.12 0.010 280 / 0.08);
+
+  /* Light-mode accent, restored to the original relief-theme mint green per
+     explicit user preference (a contrast audit had darkened this to
+     oklch(0.48 0.110 155) for a 4.5:1 WCAG text/icon ratio — it only clears
+     about 2.37:1 at this lightness against white — but the darker tone
+     wasn't the intended brand green; matches the same call made for
+     --brand above). Keep this in mind before using --accent as small body
+     text directly on a white surface.
+     The mention/radius/motion tokens below are genuinely theme-independent
+     (same in light and dark) so they live here once, not duplicated per
+     theme: this used to be a second root block declared after the dark
+     class, which accidentally redeclared light-mode accent tokens there
+     too; since the html element gets both the dark class and matches the
+     root selector at equal specificity, the later-in-source block always
+     won, silently making the dark blocks own accent override completely
+     unreachable. Keeping only one root block (this one, before the dark
+     class) fixes that for good: the dark class below is now the only
+     later override. */
+  --accent:        oklch(0.72 0.110 155);
+  --accent-hover:  oklch(0.64 0.110 155);
+  --accent-bg:     oklch(0.72 0.110 155 / 0.10);
+  --accent-border: oklch(0.72 0.110 155 / 0.26);
+  /* Mentions/links inside free text — needs to read as "this is a link",
+     which the mint accent alone doesn't signal, so it's blended with a
+     conventional link-blue (250° hue, the same one the old "awareness"
+     theme used) rather than either color on its own. Derived from --accent
+     via color-mix so it stays correct in both light and dark automatically. */
+  --mention:       color-mix(in oklch, var(--accent) 55%, oklch(0.60 0.20 250) 45%);
+  --r-sm: 12px; --r-md: 20px; --r-lg: 28px; --r-pill: 999px;
+  --motion-fast: 220ms; --motion-base: 400ms; --motion-slow: 600ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1); /* smooth settle */
+
   --font-sans:           'Inter', system-ui, sans-serif;
   --font-heading:        'Inter', system-ui, sans-serif;
   --font-mono:           'Courier New', Courier, monospace;
@@ -43,29 +124,35 @@
   color-scheme: light dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:                  oklch(0.15 0.010 280);   /* Deep midnight theme */
-    --surface:             oklch(0.19 0.015 280);   /* Card container dark */
-    --surface-translucent: oklch(0.19 0.015 280 / 0.75);
-    --border:              oklch(0.24 0.015 280);
-    --border-strong:       oklch(0.30 0.020 280);
+.dark {
+  --bg:                  oklch(0.16 0.012 275);
+  --surface:             oklch(0.21 0.016 275);
+  --surface-translucent: oklch(0.21 0.016 275 / 0.75);
+  /* Raised from 0.24/0.30 — at 0.010-0.015 chroma against a 0.15-0.19
+     background the old borders read as almost the same color as the
+     surface, so cards/dividers had no visible edge at all. */
+  --border:              oklch(0.30 0.018 275);
+  --border-strong:       oklch(0.38 0.022 275);
 
-    /* Text */
-    --text:                oklch(0.74 0.015 280);
-    --text-h:              oklch(0.95 0.005 280);
-    --text-s:              oklch(0.52 0.015 280);
+  --text:                oklch(0.78 0.014 275);
+  --text-h:              oklch(0.96 0.004 275);
+  --text-s:              oklch(0.60 0.016 275);
 
-    /* Accents (slightly desaturated on dark surface) */
-    --accent:              oklch(0.72 0.160 295);
-    --accent-hover:        oklch(0.78 0.170 295);
-    --accent-bg:           oklch(0.72 0.160 295 / 0.12);
-    --accent-border:       oklch(0.72 0.160 295 / 0.35);
+  --danger:              oklch(0.65 0.200 25);
+  --danger-hover:        oklch(0.71 0.205 25);
 
-    /* Shadows */
-    --shadow-sm:           0 2px 8px rgba(0, 0, 0, 0.2);
-    --shadow-md:           0 8px 30px rgba(0, 0, 0, 0.4);
-  }
+  --sh-sm:               0 2px 8px rgba(0, 0, 0, 0.2);
+  --sh-md:               0 8px 30px rgba(0, 0, 0, 0.4);
+
+  /* ── Relief theme — soft pastel mint-green, generous radii, smooth-settle motion ──
+     The app's one and only visual register (no theme switcher). Now
+     actually reachable (see the long comment on the light-mode --accent
+     above) — a light, airy accent reads fine against this dark surface,
+     the failure mode above was specific to light-mode white surfaces. */
+  --accent:        oklch(0.78 0.095 155);
+  --accent-hover:  oklch(0.83 0.100 155);
+  --accent-bg:     oklch(0.78 0.095 155 / 0.14);
+  --accent-border: oklch(0.78 0.095 155 / 0.34);
 }
 
 /* ── Base Styles ────────────────────────────────────────────── */
@@ -96,4 +183,33 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
+}
+
+/* ── Upgrade shimmer ──────────────────────────────────────────
+   A light sweep on hover for role-upgrade actions (e.g. "Make moderator")
+   — a small, deliberate flourish that visually reads as "this elevates
+   something", not decoration for its own sake. Respects reduced-motion. */
+@keyframes upgrade-shimmer-sweep {
+  0% { background-position: -150% 0; }
+  100% { background-position: 250% 0; }
+}
+.upgrade-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.upgrade-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(115deg, transparent 30%, oklch(1 0 0 / 0.35) 50%, transparent 70%);
+  background-size: 200% 100%;
+  background-position: -150% 0;
+  pointer-events: none;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .upgrade-shimmer:hover::after {
+    opacity: 1;
+    animation: upgrade-shimmer-sweep 0.9s ease-in-out;
+  }
 }

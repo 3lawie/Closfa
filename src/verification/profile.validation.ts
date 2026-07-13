@@ -5,8 +5,19 @@ export const updateProfileValidation = z.object({
   bio: z.string().max(160).optional(),
   website: z.url().max(255).optional(),
   location: z.string().max(255).optional(),
+  hideEngagementCounts: z.boolean().optional(),
 }).extend({
   imageMediaId: z.string().optional(), // ID of the uploaded media record
+})
+
+/** Avatar upload — client uploads to ImageKit first, then registers the resulting file as a media row. */
+export const uploadAvatarValidation = z.object({
+  mediaUrl: z.string().min(1),
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  fileSize: z.number().int().positive().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
 })
 
 /** Display name update — name + nickname separately */

@@ -22,6 +22,21 @@ export const deleteCommentValidation = z.object({
   commentId: z.string().min(1, 'Comment ID is required'),
 })
 
+export const deleteReplyValidation = z.object({
+  replyId: z.string().min(1, 'Reply ID is required'),
+})
+
+export const toggleCommentLikeValidation = z.object({
+  commentId: z.string().min(1, 'Comment ID is required'),
+})
+
+export const toggleReplyLikeValidation = z.object({
+  replyId: z.string().min(1, 'Reply ID is required'),
+})
+
 export type CreateCommentInput = z.infer<typeof createCommentValidation>
 export type CreateReplyInput = z.infer<typeof createReplyValidation>
 export type DeleteCommentInput = z.infer<typeof deleteCommentValidation>
+export type DeleteReplyInput = z.infer<typeof deleteReplyValidation>
+export type ToggleCommentLikeInput = z.infer<typeof toggleCommentLikeValidation>
+export type ToggleReplyLikeInput = z.infer<typeof toggleReplyLikeValidation>

@@ -9,6 +9,9 @@ import { redis } from '../db/redis/index'
 const LIMITER_CONFIG = {
   default: () => Ratelimit.slidingWindow(30, '10 s'),
   auth: () => Ratelimit.slidingWindow(10, '60 s'),
+  // Redeeming a role key is a guessing-attack surface (a valid code is a
+  // bearer credential until claimed) — much stricter than the default tier.
+  roleRedeem: () => Ratelimit.slidingWindow(5, '60 s'),
 } as const
 
 export type LimiterName = keyof typeof LIMITER_CONFIG

@@ -1,29 +1,30 @@
 import { cn } from '@/lib/utils/cn'
 import type { ButtonHTMLAttributes } from 'react'
+import { Loader2 } from 'lucide-react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive'
   size?: 'sm' | 'md' | 'lg'
-  loading?: boolean
+  isPending?: boolean
 }
 
 const variants = {
-  primary: 'text-white border border-transparent shadow-sm',
-  secondary: 'bg-transparent text-current shadow-sm',
-  ghost: 'bg-transparent text-current border border-transparent opacity-70 hover:opacity-100',
-  danger: 'bg-red-500 hover:bg-red-600 text-white border border-red-600 shadow-sm',
+  primary: 'bg-accent text-white hover:bg-accent-hover shadow-sm',
+  secondary: 'bg-surface border border-border text-text hover:bg-surface-translucent shadow-sm',
+  ghost: 'bg-transparent text-text-s hover:text-text hover:bg-surface-translucent',
+  destructive: 'bg-danger text-white hover:bg-danger-hover shadow-sm',
 }
 
 const sizes = {
-  sm: 'px-3 py-1.5 text-sm rounded-md',
-  md: 'px-4 py-2 text-sm rounded-lg',
-  lg: 'px-6 py-3 text-base rounded-lg',
+  sm: 'px-3 py-1.5 text-xs font-semibold rounded-sm',
+  md: 'px-4 py-2 text-sm font-bold rounded-md',
+  lg: 'px-6 py-3 text-base font-bold rounded-lg',
 }
 
 export function Button({
   variant = 'primary',
   size = 'md',
-  loading = false,
+  isPending = false,
   disabled,
   className,
   children,
@@ -32,24 +33,17 @@ export function Button({
   return (
     <button
       {...props}
-      disabled={disabled || loading}
+      disabled={disabled || isPending}
       className={cn(
-        'font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)] active:scale-95 disabled:opacity-50 disabled:pointer-events-none',
         variants[variant],
         sizes[size],
-        className,
+        className
       )}
-      style={{
-        background: variant === 'primary' ? 'var(--accent)' : undefined,
-        borderColor: variant === 'secondary' ? 'var(--border)' : undefined,
-        color: variant === 'secondary' ? 'var(--text)' : undefined,
-        ...props.style
-      }}
     >
-      {loading ? (
+      {isPending ? (
         <span className="flex items-center gap-2">
-          <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          <Loader2 className="w-4 h-4 animate-spin" />
           {children}
         </span>
       ) : (

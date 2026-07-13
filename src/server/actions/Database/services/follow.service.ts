@@ -6,6 +6,7 @@ import { schema } from '@/server/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
+import { createNotification } from './notification.service'
 
 const followInput = z.object({ targetUserId: z.string().min(1) })
 
@@ -35,6 +36,8 @@ export const followUser = createServerFn({ method: 'POST' })
         followerId: userId,
         followedId: targetUserId,
       })
+
+      await createNotification({ recipientId: targetUserId, actorId: userId, type: 'follow', entityId: null })
 
       return ok({ alreadyFollowing: false })
     } catch (e) {

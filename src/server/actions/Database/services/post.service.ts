@@ -5,9 +5,11 @@ import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { queries } from '@/server/queries'
 import { verifyIsOwner } from '../verifiers/auth'
+import { getGlobalPermission } from '../verifiers/permissions'
 import { eq } from 'drizzle-orm'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
+import { notifyMentions } from './notification.service'
 
 /** Fetch a single post for the detail route. Public (guests and users). */
 const getPostInput = z.object({ postId: z.string().min(1) })
@@ -23,6 +25,7 @@ export const getPostFn = createServerFn({ method: 'GET' })
 const createPostInput = z
   .object({
     content: z.string().max(5000).optional(),
+    mediaQuality: z.enum(['compressed', 'original']).default('compressed'),
     media: z
       .array(
         z.object({
@@ -33,11 +36,14 @@ const createPostInput = z
           fileSize: z.number().int().positive().optional(),
           width: z.number().int().positive().optional(),
           height: z.number().int().positive().optional(),
-          duration: z.number().int().positive().optional(),
+          duration: z.number().positive().optional().transform(val => val !== undefined ? Math.max(1, Math.round(val)) : undefined).optional(),
         }),
       )
       .max(10)
       .default([]),
+    // Optional collab co-author, invited at publish time — pending until
+    // they agree (respondToCollabInviteFn), never assumed accepted.
+    collaboratorUserId: z.string().optional(),
   })
   .refine((d) => !!d.content?.trim() || d.media.length > 0, {
     message: 'Add some text or at least one media item',
@@ -53,7 +59,11 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
   .inputValidator(createPostInput)
   .handler(async ({ data, context }): Promise<ServerResult<{ postId: string }>> => {
     const { userId } = context.session
-    const { content, media } = data
+    const { content, media, mediaQuality, collaboratorUserId } = data
+
+    if (collaboratorUserId === userId) {
+      return err('BAD_REQUEST', 'You cannot invite yourself as a collaborator')
+    }
 
     try {
       // Ensure the default category exists (post_category is a NOT NULL FK).
@@ -90,8 +100,10 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
           author_id: userId,
           post_category: 'general',
           post_status: 'published',
+          post_type: collaboratorUserId ? 'collab' : 'solo',
           is_published: true,
           published_at: new Date(),
+          media_quality: mediaQuality,
         })
         .returning({ postId: schema.post.postId })
 
@@ -101,12 +113,50 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
         )
       }
 
+      if (collaboratorUserId) {
+        await db.insert(schema.postToUser).values({
+          post_id: postRow.postId,
+          user_id: collaboratorUserId,
+          accepted: false,
+        })
+
+        try {
+          await db.insert(schema.notification).values({
+            userId: collaboratorUserId, actorId: userId, type: 'collab_invite', entityId: postRow.postId,
+            message: 'invited you to be a collaborator on their post.',
+          })
+        } catch (notifyError) {
+          logger.error('createPostWithMedia: collab notification failed', { postId: postRow.postId }, notifyError instanceof Error ? notifyError : undefined)
+        }
+      }
+
+      if (content) {
+        await notifyMentions(content, userId, postRow.postId)
+      }
+
       return ok({ postId: postRow.postId })
     } catch (e) {
       logger.error('createPostWithMedia failed', { userId }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to create post')
     }
   })
+
+// Shared soft-delete, extracted so moderation-triggered removal
+// (moderation.service.ts's resolveReportFn) and owner/admin-triggered removal
+// (deletePost below) can't drift apart. Caller is responsible for its own
+// authorization check before calling this — it performs no checks itself.
+//
+// Soft delete (flip status, keep the row) rather than cascade-deleting
+// comments/likes/media/ImageKit files: a "removed" post still needs to show
+// up — original content and all — on the admin post-control page, which a
+// hard delete would make impossible. `is_published: false` reuses the same
+// flag the feed queries already filter on, so removed posts disappear from
+// feeds/profiles for free without a second exclusion condition to maintain.
+export async function deletePostRecord(postId: string): Promise<void> {
+  await db.update(schema.post)
+    .set({ post_status: 'removed', is_published: false, updatedAt: new Date() })
+    .where(eq(schema.post.postId, postId))
+}
 
 export const deletePost = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
@@ -116,7 +166,7 @@ export const deletePost = createServerFn({ method: 'POST' })
     const { postId } = data
 
     try {
-      const post = await queries.post.getById(postId)
+      const post = await queries.post.getById(postId, true)
 
       if (!post) {
         return err('NOT_FOUND', 'Post not found')
@@ -124,54 +174,247 @@ export const deletePost = createServerFn({ method: 'POST' })
 
       const ownershipCheck = verifyIsOwner(userId, post.author_id)
       if (!ownershipCheck.ok) {
-        // Only the owner may delete here; moderator removal lives in moderation.service.
-        return err('FORBIDDEN', ownershipCheck.message)
-      }
-
-      // First delete all child records to satisfy foreign key constraints
-      await db.delete(schema.commentReply).where(eq(schema.commentReply.post_id, postId))
-      await db.delete(schema.comment).where(eq(schema.comment.postId, postId))
-      await db.delete(schema.postLike).where(eq(schema.postLike.postId, postId))
-      await db.delete(schema.postToCategory).where(eq(schema.postToCategory.post_id, postId))
-      await db.delete(schema.postToUser).where(eq(schema.postToUser.post_id, postId))
-      await db.delete(schema.postToMedia).where(eq(schema.postToMedia.post_id, postId))
-
-      // Now delete the post itself
-      await db.delete(schema.post).where(eq(schema.post.postId, postId))
-
-      // Delete media records and ImageKit files
-      if (post.media && post.media.length > 0) {
-        const privateKey = process.env.IMAGEKIT_PRIVATE_KEY
-        if (privateKey) {
-          const ikAuth = Buffer.from(`${privateKey}:`).toString('base64')
-          for (const m of post.media) {
-            // Delete from our database
-            await db.delete(schema.media).where(eq(schema.media.media_id, m.media_id))
-            
-            // Try to delete from ImageKit
-            try {
-              // Search by mediaUrl (the actual stored path/name), not the original fileName
-              const searchUrl = `https://api.imagekit.io/v1/files?searchQuery=name="${m.mediaUrl}"`
-              const searchRes = await fetch(searchUrl, { headers: { Authorization: `Basic ${ikAuth}` } })
-              if (searchRes.ok) {
-                const data = (await searchRes.json()) as { fileId: string }[]
-                for (const file of data) {
-                  await fetch(`https://api.imagekit.io/v1/files/${file.fileId}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Basic ${ikAuth}` }
-                  })
-                }
-              }
-            } catch (err) {
-              logger.warn(`Failed to delete media from ImageKit: ${m.mediaUrl}`, { postId, error: err instanceof Error ? err.message : 'Unknown error' })
-            }
-          }
+        // Not the owner — still allow a global admin to remove it directly,
+        // same threshold resolveReportFn already uses for post deletion via
+        // the report queue (canDeleteContent, admin+). This is the direct
+        // path; moderator-tier report-driven removal still goes through
+        // moderation.service.ts's resolveReportFn.
+        const perm = await getGlobalPermission(userId)
+        if (!perm.authorized || !perm.canDeleteContent) {
+          return err('FORBIDDEN', ownershipCheck.message)
         }
       }
+
+      await deletePostRecord(postId)
 
       return ok({ postId })
     } catch (e) {
       logger.error('deletePost failed', { userId, postId }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to delete post')
+    }
+  })
+
+/** The current user's own posts across every status — the "My Posts" personal control page. */
+export const getMyPostsFn = createServerFn({ method: 'GET' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .handler(async ({ context }) => {
+    return await queries.post.getOwnAllStatuses(context.session.userId)
+  })
+
+/** Admin post-control view — every post regardless of status (draft/published/removed/etc). */
+export const getAdminPostsFn = createServerFn({ method: 'GET' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .handler(async ({ context }): Promise<ServerResult<Awaited<ReturnType<typeof queries.post.getAllForAdmin>>>> => {
+    const perm = await getGlobalPermission(context.session.userId)
+    if (!perm.authorized || !perm.canDeleteContent) {
+      return err('FORBIDDEN', 'Insufficient permissions to view the post control page')
+    }
+
+    const posts = await queries.post.getAllForAdmin()
+    return ok(posts)
+  })
+
+const moderateReasonInput = z.object({ postId: z.string().min(1), reason: z.string().min(1).max(1000) })
+
+/**
+ * Admin "soft delete" — sends the post back to draft with an explanation,
+ * reversible: the owner can fix it and resubmit (resubmitPostFn) for the
+ * admin to re-approve (approvePostFn). Distinct from adminCompleteDeletePostFn,
+ * which is final.
+ */
+export const adminSoftDeletePostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(moderateReasonInput)
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: true }>> => {
+    const { userId } = context.session
+    const { postId, reason } = data
+
+    try {
+      const perm = await getGlobalPermission(userId)
+      if (!perm.authorized || !perm.canDeleteContent) {
+        return err('FORBIDDEN', 'Insufficient permissions to send this post back for revision')
+      }
+
+      const post = await queries.post.getById(postId, true)
+      if (!post) return err('NOT_FOUND', 'Post not found')
+
+      await db.update(schema.post)
+        .set({ post_status: 'draft', is_published: false, moderationReason: reason, updatedAt: new Date() })
+        .where(eq(schema.post.postId, postId))
+
+      await db.insert(schema.auditLog).values({
+        actorId: userId, action: 'hide_content', targetType: 'post', targetId: postId, reason,
+      })
+
+      // Best-effort, mirrors moderation.service.ts's reportContent pattern —
+      // a failed notification must not fail the moderation action itself.
+      try {
+        await db.insert(schema.notification).values({
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId,
+          message: `Your post was sent back for revision: ${reason}`,
+        })
+      } catch (notifyError) {
+        logger.error('adminSoftDeletePost: notification failed', { postId }, notifyError instanceof Error ? notifyError : undefined)
+      }
+
+      return ok({ postId: true })
+    } catch (e) {
+      logger.error('adminSoftDeletePost failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to send post back for revision')
+    }
+  })
+
+/** Admin "complete delete" — final, not resubmittable. Reason stays visible to the owner in their post history. */
+export const adminCompleteDeletePostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(moderateReasonInput)
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: true }>> => {
+    const { userId } = context.session
+    const { postId, reason } = data
+
+    try {
+      const perm = await getGlobalPermission(userId)
+      if (!perm.authorized || !perm.canDeleteContent) {
+        return err('FORBIDDEN', 'Insufficient permissions to delete this post')
+      }
+
+      const post = await queries.post.getById(postId, true)
+      if (!post) return err('NOT_FOUND', 'Post not found')
+
+      await db.update(schema.post)
+        .set({ post_status: 'removed', is_published: false, moderationReason: reason, updatedAt: new Date() })
+        .where(eq(schema.post.postId, postId))
+
+      await db.insert(schema.auditLog).values({
+        actorId: userId, action: 'delete_post', targetType: 'post', targetId: postId, reason,
+      })
+
+      try {
+        await db.insert(schema.notification).values({
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: null,
+          message: `Your post was removed: ${reason}`,
+        })
+      } catch (notifyError) {
+        logger.error('adminCompleteDeletePost: notification failed', { postId }, notifyError instanceof Error ? notifyError : undefined)
+      }
+
+      return ok({ postId: true })
+    } catch (e) {
+      logger.error('adminCompleteDeletePost failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to delete post')
+    }
+  })
+
+/** Owner fixes a draft the admin sent back and resubmits it for re-approval. */
+export const resubmitPostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1), content: z.string().max(5000) }))
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: true }>> => {
+    const { userId } = context.session
+    const { postId, content } = data
+
+    try {
+      const post = await queries.post.getById(postId, true)
+      if (!post) return err('NOT_FOUND', 'Post not found')
+
+      const ownershipCheck = verifyIsOwner(userId, post.author_id)
+      if (!ownershipCheck.ok) return err('FORBIDDEN', ownershipCheck.message)
+
+      if (post.post_status !== 'draft') {
+        return err('BAD_REQUEST', 'Only a post sent back for revision can be resubmitted')
+      }
+
+      await db.update(schema.post)
+        .set({ content, post_status: 'pending', updatedAt: new Date() })
+        .where(eq(schema.post.postId, postId))
+
+      return ok({ postId: true })
+    } catch (e) {
+      logger.error('resubmitPost failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to resubmit post')
+    }
+  })
+
+/** Admin approves a resubmitted post, publishing it again and clearing the moderation reason. */
+export const approvePostFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1) }))
+  .handler(async ({ data, context }): Promise<ServerResult<{ postId: true }>> => {
+    const { userId } = context.session
+    const { postId } = data
+
+    try {
+      const perm = await getGlobalPermission(userId)
+      if (!perm.authorized || !perm.canDeleteContent) {
+        return err('FORBIDDEN', 'Insufficient permissions to approve this post')
+      }
+
+      const post = await queries.post.getById(postId, true)
+      if (!post) return err('NOT_FOUND', 'Post not found')
+
+      await db.update(schema.post)
+        .set({
+          post_status: 'published',
+          is_published: true,
+          moderationReason: null,
+          published_at: post.published_at ?? new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.post.postId, postId))
+
+      try {
+        await db.insert(schema.notification).values({
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId,
+          message: 'Your resubmitted post was approved and is live again.',
+        })
+      } catch (notifyError) {
+        logger.error('approvePost: notification failed', { postId }, notifyError instanceof Error ? notifyError : undefined)
+      }
+
+      return ok({ postId: true })
+    } catch (e) {
+      logger.error('approvePost failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to approve post')
+    }
+  })
+
+/**
+ * Owner-driven visibility toggle — unpublish your own post back to a private
+ * draft, or republish it, no reason/admin involved. Deliberately narrow: only
+ * flips between 'draft' and 'published', never touches 'pending'/'removed',
+ * which are the admin-workflow-controlled statuses (resubmitPostFn/
+ * adminSoftDeletePostFn/adminCompleteDeletePostFn own those transitions).
+ */
+export const setOwnPostVisibilityFn = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1), status: z.enum(['draft', 'published']) }))
+  .handler(async ({ data, context }): Promise<ServerResult<{ status: 'draft' | 'published' }>> => {
+    const { userId } = context.session
+    const { postId, status } = data
+
+    try {
+      const post = await queries.post.getById(postId, true)
+      if (!post) return err('NOT_FOUND', 'Post not found')
+
+      const ownershipCheck = verifyIsOwner(userId, post.author_id)
+      if (!ownershipCheck.ok) return err('FORBIDDEN', ownershipCheck.message)
+
+      if (post.post_status !== 'draft' && post.post_status !== 'published') {
+        return err('BAD_REQUEST', 'This post is under moderation review and cannot be changed right now')
+      }
+
+      await db.update(schema.post)
+        .set({
+          post_status: status,
+          is_published: status === 'published',
+          published_at: status === 'published' ? (post.published_at ?? new Date()) : post.published_at,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.post.postId, postId))
+
+      return ok({ status })
+    } catch (e) {
+      logger.error('setOwnPostVisibility failed', { userId, postId }, e instanceof Error ? e : undefined)
+      return err('INTERNAL_ERROR', 'Failed to update visibility')
     }
   })

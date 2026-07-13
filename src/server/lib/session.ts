@@ -64,6 +64,24 @@ export const SessionData = z.object({
 })
 export type SessionData = z.infer<typeof SessionData>
 
+/**
+ * The subset of SessionData safe to ship to the client. Route loaders that
+ * return `session` in their loader data (not just beforeLoad context) get
+ * that value serialized straight into the SSR HTML payload for hydration —
+ * `email`/`sub`/`issuedAt`/`expiresAt` have no reason to leave the server,
+ * every client use of session is "whose post is this" / "what's my name",
+ * never the email address itself.
+ */
+export type PublicSessionData = Pick<SessionData, 'userId' | 'name' | 'nickname'>
+
+export function toPublicSession(session: SessionData): PublicSessionData
+export function toPublicSession(session: SessionData | null): PublicSessionData | null
+export function toPublicSession(session: SessionData | null): PublicSessionData | null {
+  if (!session) return null
+  const { userId, name, nickname } = session
+  return { userId, name, nickname }
+}
+
 
 export const SessionResult = z.object({
   session: SessionData.nullable(),

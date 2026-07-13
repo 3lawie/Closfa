@@ -28,6 +28,10 @@ export const relations = defineRelations(schema, (r) => ({
     notifications: r.many.notification({ from: r.user.userId, to: r.notification.userId }),
     createdNotifications: r.many.notification({ from: r.user.userId, to: r.notification.actorId }),
     auditLogs: r.many.auditLog({ from: r.user.userId, to: r.auditLog.actorId }),
+    siteRole: r.one.siteRole({ from: r.user.userId, to: r.siteRole.userId }),
+    blockedUsers: r.many.userBlock({ from: r.user.userId, to: r.userBlock.blockerId, alias: "blockedUsers" }),
+    blockedBy: r.many.userBlock({ from: r.user.userId, to: r.userBlock.blockedId, alias: "blockedBy" }),
+    savedPosts: r.many.savedPost({ from: r.user.userId, to: r.savedPost.userId }),
   },
 
   // ── follow ────────────────────────────────────────────────────
@@ -130,5 +134,29 @@ export const relations = defineRelations(schema, (r) => ({
   notification: {
     user: r.one.user({ from: r.notification.userId, to: r.user.userId }),
     actor: r.one.user({ from: r.notification.actorId, to: r.user.userId }),
+  },
+
+  // ── siteRole ─────────────────────────────────────────────────
+  siteRole: {
+    user: r.one.user({ from: r.siteRole.userId, to: r.user.userId }),
+    assignedByUser: r.one.user({ from: r.siteRole.assignedBy, to: r.user.userId }),
+  },
+
+  // ── roleGrant ────────────────────────────────────────────────
+  roleGrant: {
+    createdByUser: r.one.user({ from: r.roleGrant.createdBy, to: r.user.userId }),
+    redeemedByUser: r.one.user({ from: r.roleGrant.redeemedBy, to: r.user.userId }),
+  },
+
+  // ── userBlock ────────────────────────────────────────────────
+  userBlock: {
+    blocker: r.one.user({ from: r.userBlock.blockerId, to: r.user.userId, alias: "blocker" }),
+    blocked: r.one.user({ from: r.userBlock.blockedId, to: r.user.userId, alias: "blocked" }),
+  },
+
+  // ── savedPost ────────────────────────────────────────────────
+  savedPost: {
+    user: r.one.user({ from: r.savedPost.userId, to: r.user.userId }),
+    post: r.one.post({ from: r.savedPost.postId, to: r.post.postId }),
   },
 }))

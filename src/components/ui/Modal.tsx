@@ -1,5 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils/cn'
+import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
 
 interface ModalProps {
   isOpen: boolean
@@ -10,99 +13,78 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, children, className, title }: ModalProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
+  // Same SSR/hydration-mismatch fix as Toast.tsx's Toaster and
+  // ConfirmDialog — any caller that mounts this unconditionally (isOpen just
+  // toggling visibility) hit a guaranteed server/client first-render mismatch
+  // with the old `typeof document === 'undefined'` check.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-
-    if (isOpen && !dialog.open) {
-      dialog.showModal()
-      // Lock body scroll
+    if (isOpen) {
       document.body.style.overflow = 'hidden'
-    } else if (!isOpen && dialog.open) {
-      dialog.close()
+    } else {
       document.body.style.overflow = ''
     }
-
-    return () => {
-      document.body.style.overflow = ''
-    }
+    return () => { document.body.style.overflow = '' }
   }, [isOpen])
 
-  // Handle click outside to close
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-
-    const handleBackdropClick = (e: MouseEvent) => {
-      const rect = dialog.getBoundingClientRect()
-      const isInDialog = (
-        rect.top <= e.clientY &&
-        e.clientY <= rect.top + rect.height &&
-        rect.left <= e.clientX &&
-        e.clientX <= rect.left + rect.width
-      )
-      if (!isInDialog) {
+    const handleCancel = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
         onClose()
       }
     }
-
-    dialog.addEventListener('click', handleBackdropClick)
-    return () => dialog.removeEventListener('click', handleBackdropClick)
-  }, [onClose])
-
-  // Handle escape key
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-
-    const handleCancel = (e: Event) => {
-      e.preventDefault()
-      onClose()
+    if (isOpen) {
+      document.addEventListener('keydown', handleCancel)
     }
+    return () => document.removeEventListener('keydown', handleCancel)
+  }, [isOpen, onClose])
 
-    dialog.addEventListener('cancel', handleCancel)
-    return () => dialog.removeEventListener('cancel', handleCancel)
-  }, [onClose])
+  if (!mounted) return null
 
-  return (
-    <dialog
-      ref={dialogRef}
-      className={cn(
-        'backdrop:bg-black/60 backdrop:backdrop-blur-sm',
-        'open:animate-in open:fade-in-0 open:zoom-in-95',
-        'p-0 m-auto rounded-2xl shadow-2xl border-0',
-        'max-w-2xl w-full max-h-[90vh] overflow-hidden',
-        className
-      )}
-      style={{
-        background: 'var(--bg)',
-        color: 'var(--text)'
-      }}
-    >
-      <div className="flex flex-col h-full max-h-[90vh]">
-        {(title || onClose) && (
-          <header className="flex items-center justify-between px-6 py-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }}>
-            {title ? (
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-h)' }}>{title}</h2>
-            ) : <div />}
-            <button 
-              onClick={onClose}
-              className="p-2 -mr-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
-              aria-label="Close dialog"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </header>
-        )}
-        <div className="overflow-y-auto overscroll-contain flex-1">
-          {children}
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            // Fixed dark scrim, deliberately NOT the swappable bg token — a
+            // backdrop must stay dark regardless of light/dark mode or theme.
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer"
+          />
+          <motion.div
+            initial={{ scale: 0.95, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 20, opacity: 0 }}
+            transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
+            className={cn(
+              "relative w-full max-w-2xl bg-surface rounded-lg shadow-md border border-border overflow-hidden flex flex-col max-h-[90vh]",
+              className
+            )}
+          >
+            <header className="flex items-center justify-between p-4 px-6 border-b border-border bg-surface-translucent backdrop-blur-md sticky top-0 z-10 shrink-0">
+              {title ? (
+                <h2 className="text-lg font-bold text-text-h">{title}</h2>
+              ) : <div/>}
+              <button
+                onClick={onClose}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-surface border border-border text-text-s hover:text-text transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                aria-label="Close dialog">
+                <X size={20} strokeWidth={2.5} />
+              </button>
+            </header>
+            <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
+              {children}
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </dialog>
+      )}
+    </AnimatePresence>,
+    document.body
   )
 }

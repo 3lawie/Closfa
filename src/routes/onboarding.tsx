@@ -13,6 +13,9 @@ import { logger } from '@/server/lib/logger'
 import { verifyTurnstileToken } from '@/server/lib/turnstile'
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
 import { Button } from '@/components/ui/Button'
+import { redeemRoleKeyFn } from '@/server/actions/Database/services/role.service'
+import { cn } from '@/lib/utils/cn'
+import { isEmailDerivedNickname } from '@/lib/utils/format'
 
 export const claimNicknameFn = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
@@ -20,6 +23,13 @@ export const claimNicknameFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }): Promise<ServerResult<{ nickname: string }>> => {
     const { session } = context
     const cleanNickname = data.nickname.trim().toLowerCase()
+
+    // Reject at claim time rather than only masking it later everywhere the
+    // nickname is displayed — this is the exact "nickname === email" leak
+    // that prompted this check, so it's better to never let it happen.
+    if (isEmailDerivedNickname(cleanNickname, session.email)) {
+      return err('BAD_REQUEST', 'For your privacy, please choose a nickname that is not based on your email address.')
+    }
 
     // Bot gate — fail-closed in production, bypassed in dev without keys.
     const human = await verifyTurnstileToken(data.turnstileToken)
@@ -72,7 +82,21 @@ function OnboardingPage() {
   const [nickname, setNickname] = useState('')
   const [error, setError] = useState('')
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>(undefined)
+  const [roleKey, setRoleKey] = useState('')
+  const [roleKeyMessage, setRoleKeyMessage] = useState('')
   const router = useRouter()
+
+  // Independent of claimMutation below — a role key is a rare privileged
+  // action, not part of the mandatory nickname-claim step, so it's a second,
+  // separate action on this same page rather than merged into one handler.
+  const redeemMutation = useMutation({
+    mutationFn: () => redeemRoleKeyFn({ data: { code: roleKey } }),
+    onSuccess: (res) => {
+      setRoleKeyMessage(res.ok ? `Success — you are now ${res.data.role}.` : res.message)
+      if (res.ok) setRoleKey('')
+    },
+    onError: () => setRoleKeyMessage('An error occurred — please try again.'),
+  })
 
   // Mirrors the PostCard likeMutation pattern: mutation owns pending state,
   // expected failures arrive as { ok: false } results, not thrown errors.
@@ -99,53 +123,49 @@ function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2" style={{ backgroundColor: 'var(--bg)' }}>
-      
-      {/* Left Column - Visual Branding Pane */}
-      <div 
-        className="hidden lg:flex flex-col justify-between p-12 text-white relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%)',
-        }}
-      >
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-500 via-violet-600 to-zinc-950" />
-        
-        <div className="relative z-10">
-          <span className="text-2xl font-black tracking-tight" style={{ color: 'var(--brand)' }}>
-            Closfa.
-          </span>
+    <div className="grid min-h-screen w-full grid-cols-1 md:grid-cols-2 bg-bg">
+
+      {/* Left Column - Visual Branding Pane. Fixed white text (not the
+          swappable text-text token) — this panel is always a colored
+          gradient regardless of mode/theme, so text needs to stay light
+          for contrast rather than following the neutral-surface text color. */}
+      <div className="relative flex flex-col justify-between p-8 md:p-16 bg-gradient-to-br from-accent to-accent-hover text-white">
+        <div className="hidden md:block" />
+
+        <div className="text-brand font-bold text-2xl tracking-tight">
+          Closfa.
         </div>
 
-        <div className="relative z-10 flex flex-col gap-4 max-w-md">
-          <h1 className="text-4xl font-extrabold tracking-tight leading-tight text-white m-0">
+        <div className="max-w-md space-y-4">
+          <h1 className="text-4xl md:text-5xl font-bold leading-tight text-white">
             A quiet space to discover and share.
           </h1>
-          <p className="text-sm opacity-80 leading-relaxed">
+          <p className="text-lg text-white/90 leading-relaxed">
             Closfa is designed from zero with a rest-mode aesthetic, bringing you a clean, distraction-free environment to read, write, and engage with media.
           </p>
         </div>
 
-        <div className="relative z-10 text-xs opacity-50">
+        <div className="text-sm text-white/70">
           &copy; 2026 Closfa Inc. All rights reserved.
         </div>
       </div>
 
       {/* Right Column - Nickname Claim Form */}
-      <div className="flex flex-col justify-center py-12 px-6 sm:px-12 lg:px-16" style={{ background: 'var(--bg)' }}>
-        <div className="mx-auto w-full max-w-sm">
-          <div className="mb-8">
-            <h2 className="text-3xl font-extrabold tracking-tight" style={{ color: 'var(--text-h)' }}>
+      <div className="flex items-center justify-center p-6 md:p-16 bg-bg">
+        <div className="w-full max-w-md space-y-8">
+          <div className="space-y-2">
+            <h2 className="text-3xl font-bold text-text-h">
               Choose your nickname
             </h2>
-            <p className="mt-2 text-sm" style={{ color: 'var(--text-s)' }}>
+            <p className="text-text-s">
               Set up your handle to publish and interact on Closfa.
             </p>
           </div>
 
-          <div className="py-8 px-6 rounded-2xl border shadow-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div>
-                <label htmlFor="nickname" className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-h)' }}>
+          <div className="p-6 md:p-8 bg-surface border border-border rounded-lg shadow-sm space-y-8">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label htmlFor="nickname" className="block text-sm font-medium text-text-h">
                   Nickname
                 </label>
                 <input
@@ -156,29 +176,63 @@ function OnboardingPage() {
                   placeholder="e.g. janesmith"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
-                  style={{ backgroundColor: 'var(--bg)', color: 'var(--text-h)', borderColor: 'var(--border)' }}
-                  className="appearance-none block w-full px-4 py-3 border rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition-all text-sm"
+                  className="w-full px-4 py-2 bg-bg border border-border text-text-h rounded-md focus:outline-none focus:ring-2 focus:ring-accent-border transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
                 />
               </div>
 
               {/* Bot check */}
-              <TurnstileWidget
-                onVerify={setTurnstileToken}
-                onExpire={() => setTurnstileToken(undefined)}
-              />
+              <div className="flex justify-center">
+                <TurnstileWidget
+                  onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken(undefined)}
+                />
+              </div>
 
               {error && (
-                <div className="text-red-500 text-xs font-medium">{error}</div>
+                <div className="text-sm text-danger font-medium">
+                  {error}
+                </div>
               )}
 
               <Button
                 type="submit"
                 isPending={loading}
-                className="w-full py-3"
+                className="w-full"
               >
                 Continue
               </Button>
             </form>
+
+            {/* Second, independent entry point for admin/moderator key redemption. */}
+            <div className="pt-6 border-t border-border space-y-4">
+              <p className="text-sm font-medium text-text-s">Have a role key?</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={roleKey}
+                  onChange={(e) => setRoleKey(e.target.value)}
+                  placeholder="e.g. ADM-xxxxxxxx"
+                  className="flex-1 px-4 py-2 bg-bg border border-border text-text-h rounded-md focus:outline-none focus:ring-2 focus:ring-accent-border transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => redeemMutation.mutate()}
+                  isPending={redeemMutation.isPending}
+                  disabled={!roleKey.trim()}
+                >
+                  Redeem
+                </Button>
+              </div>
+              {roleKeyMessage && (
+                <p className={cn(
+                  "text-xs font-medium",
+                  roleKeyMessage.startsWith('Success') ? "text-accent" : "text-danger"
+                )}>
+                  {roleKeyMessage}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

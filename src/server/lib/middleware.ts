@@ -26,7 +26,10 @@
 import { createMiddleware } from '@tanstack/react-start'
 import { getSession, type SessionData, type SessionResult } from './session'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-import { checkRateLimit } from './rateLimiter'
+import { checkRateLimit, type LimiterName } from './rateLimiter'
+import { db } from '@/server/db'
+import { schema } from '@/server/db/schema'
+import { eq } from 'drizzle-orm'
 
 /**
  * CSRF origin enforcement for state-modifying requests — identical rules to
@@ -103,6 +106,19 @@ export const authMiddleware = createMiddleware()
 
     enforceCsrfOrigin()
 
+    // A ban must take effect on the very next request, not wait for the
+    // session cookie to expire naturally — so this is a live DB read on
+    // every authed call, same tradeoff getGlobalPermission already makes
+    // for role checks (never session-cached).
+    const [bannedCheck] = await db
+      .select({ isBanned: schema.user.isBanned })
+      .from(schema.user)
+      .where(eq(schema.user.userId, session.userId))
+      .limit(1)
+    if (bannedCheck?.isBanned) {
+      throw new Error('Account suspended')
+    }
+
     // Narrow session to non-null for handlers — fully typed
     return next({
       context: { session },
@@ -139,3 +155,17 @@ export const rateLimiterMiddleWare = createMiddleware()
     await checkRateLimit(context.sessionResult.session)
     return next()
   })
+
+/**
+ * Same as rateLimiterMiddleWare but pinned to a non-default tier — for
+ * endpoints that need a stricter (or looser) limit than every other server
+ * fn. Factory, not a fixed export, so existing call sites are untouched.
+ */
+export function rateLimiterMiddlewareFor(tier: LimiterName) {
+  return createMiddleware()
+    .middleware([sessionMiddleware])
+    .server(async ({ next, context }) => {
+      await checkRateLimit(context.sessionResult.session, { limiter: tier })
+      return next()
+    })
+}

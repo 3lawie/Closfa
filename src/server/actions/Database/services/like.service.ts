@@ -4,6 +4,8 @@ import { and, eq, sql } from 'drizzle-orm'
 import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
+import { ok, err, type ServerResult } from '@/server/lib/result'
+import { createNotification } from './notification.service'
 
 const toggleLikeInput = z.object({ postId: z.string().min(1) })
 
@@ -19,7 +21,7 @@ const toggleLikeInput = z.object({ postId: z.string().min(1) })
 export const toggleLike = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
   .inputValidator(toggleLikeInput)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<ServerResult<{ liked: boolean; likes: number }>> => {
     const { userId } = context.session
     const { postId } = data
 
@@ -35,7 +37,7 @@ export const toggleLike = createServerFn({ method: 'POST' })
           .set({ likes: sql`GREATEST(${schema.post.likes} - 1, 0)` })
           .where(eq(schema.post.postId, postId))
           .returning({ likes: schema.post.likes })
-        return { ok: true as const, data: { liked: false, likes: row?.likes ?? 0 } }
+        return ok({ liked: false, likes: row?.likes ?? 0 })
       }
 
       const added = await db
@@ -50,7 +52,16 @@ export const toggleLike = createServerFn({ method: 'POST' })
           .set({ likes: sql`${schema.post.likes} + 1` })
           .where(eq(schema.post.postId, postId))
           .returning({ likes: schema.post.likes })
-        return { ok: true as const, data: { liked: true, likes: row?.likes ?? 0 } }
+
+        const [authorRow] = await db
+          .select({ authorId: schema.post.author_id })
+          .from(schema.post)
+          .where(eq(schema.post.postId, postId))
+        if (authorRow) {
+          await createNotification({ recipientId: authorRow.authorId, actorId: userId, type: 'like', entityId: postId })
+        }
+
+        return ok({ liked: true, likes: row?.likes ?? 0 })
       }
 
       // Rare race: a concurrent request re-liked between our delete and insert.
@@ -58,9 +69,9 @@ export const toggleLike = createServerFn({ method: 'POST' })
         .select({ likes: schema.post.likes })
         .from(schema.post)
         .where(eq(schema.post.postId, postId))
-      return { ok: true as const, data: { liked: true, likes: current[0]?.likes ?? 0 } }
-    } catch (err) {
-      console.error('[toggleLike] Failed:', err)
-      return { ok: false as const, error: 'INTERNAL_ERROR' as const, message: 'Failed to update like' }
+      return ok({ liked: true, likes: current[0]?.likes ?? 0 })
+    } catch (e) {
+      console.error('[toggleLike] Failed:', e)
+      return err('INTERNAL_ERROR', 'Failed to update like')
     }
   })

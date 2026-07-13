@@ -17,9 +17,9 @@ const feedInput = z.object({
 export const getFeedFn = createServerFn({ method: 'GET' })
   .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
   .inputValidator(feedInput.optional())
-  .handler(async ({ data }): Promise<FeedPage> => {
+  .handler(async ({ data, context }): Promise<FeedPage> => {
     const { page = 1, limit = FEED_LIMIT } = data ?? {}
-    const posts = await queries.post.getFeed(limit, page)
+    const posts = await queries.post.getFeed(limit, page, context.session?.userId)
     const nextPage = posts.length === limit ? page + 1 : null
     return { posts: posts as unknown as FeedPage["posts"], nextCursor: null, nextPage: nextPage ?? undefined }
   })

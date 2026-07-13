@@ -70,5 +70,9 @@ export function TurnstileWidget({
     }
   }, [sitekey, onVerify, onError, onExpire, theme])
 
-  return <div ref={containerRef} />
+  return (
+    <div className="flex items-center justify-center w-full p-4 rounded-lg border border-border bg-surface-translucent shadow-sm">
+      <div ref={containerRef} className="flex items-center justify-center" />
+    </div>
+  )
 }

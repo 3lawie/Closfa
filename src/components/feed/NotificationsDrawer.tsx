@@ -1,14 +1,28 @@
-import { useSearch, useNavigate, getRouteApi } from '@tanstack/react-router'
+import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getNotificationsFn, markAllAsReadFn, markAsReadFn } from '@/server/actions/Database/services/notification.service'
 import { formatRelativeTime } from '@/lib/utils/format'
 import { cn } from '@/lib/utils/cn'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Heart,
+  MessageCircle,
+  Reply,
+  UserPlus,
+  AtSign,
+  Info,
+  ShieldAlert,
+  Bell,
+  BellOff,
+  Users,
+  X
+} from 'lucide-react'
 
 const routeApi = getRouteApi('__root__')
 
 export function NotificationsDrawer() {
   const search = routeApi.useSearch()
-  const navigate = useNavigate()
+  const navigate = routeApi.useNavigate()
   const queryClient = useQueryClient()
   const isOpen = !!search.notifications
 
@@ -36,131 +50,130 @@ export function NotificationsDrawer() {
 
   const handleClose = () => {
     navigate({
-      search: (prev) => ({ ...prev, notifications: undefined }),
+      search: (prev) => {
+        const { notifications: _notifications, ...rest } = prev
+        return rest
+      },
       replace: true,
     })
   }
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'like': return '❤️'
-      case 'comment': return '💬'
-      case 'reply': return '↪️'
-      case 'follow': return '👤'
-      case 'mention': return '👋'
-      case 'system': return '⚙️'
-      case 'moderation': return '🛡️'
-      default: return '🔔'
+      case 'like': return <Heart className="w-5 h-5" />
+      case 'comment': return <MessageCircle className="w-5 h-5" />
+      case 'reply': return <Reply className="w-5 h-5" />
+      case 'follow': return <UserPlus className="w-5 h-5" />
+      case 'mention': return <AtSign className="w-5 h-5" />
+      case 'system': return <Info className="w-5 h-5" />
+      case 'moderation': return <ShieldAlert className="w-5 h-5" />
+      case 'collab_invite': return <Users className="w-5 h-5" />
+      default: return <Bell className="w-5 h-5" />
     }
   }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        onClick={handleClose}
-        className={cn(
-          "fixed inset-0 bg-black/40 backdrop-blur-xs z-50 transition-opacity duration-300",
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-        )}
-      />
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop — fixed dark scrim, not the swappable bg token (see Modal.tsx). */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={handleClose}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer"
+          />
 
-      {/* Drawer panel */}
-      <div 
-        className={cn(
-          "fixed top-0 right-0 h-full w-full max-w-md shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col border-l",
-          isOpen ? "translate-x-0" : "translate-x-full"
-        )}
-        style={{
-          background: 'var(--surface)',
-          borderColor: 'var(--border)'
-        }}
-      >
-        <header className="px-6 py-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="text-xl font-bold" style={{ color: 'var(--text-h)' }}>Notifications</h2>
-          <div className="flex items-center gap-3">
-            {notifications.some(n => !n.read) && (
-              <button
-                onClick={() => markAllAsReadMutation.mutate()}
-                disabled={markAllAsReadMutation.isPending}
-                className="text-xs font-semibold hover:underline"
-                style={{ color: 'var(--accent)' }}
-              >
-                Mark all as read
-              </button>
-            )}
-            <button 
-              onClick={handleClose}
-              className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
-              aria-label="Close notifications"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto divide-y" style={{ divideColor: 'var(--border)' }}>
-          {notifications.length > 0 ? (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                className={cn(
-                  "p-4 transition-colors flex gap-4 cursor-pointer",
-                  !n.read ? "bg-blue-50/30 dark:bg-purple-500/5" : "hover:bg-gray-50 dark:hover:bg-zinc-800/20"
+          {/* Drawer panel */}
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+            className="relative w-full max-w-md h-full bg-surface shadow-md flex flex-col border-l border-border"
+          >
+            <header className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-2xl font-black tracking-tight text-text">Notifications</h2>
+              <div className="flex items-center gap-4">
+                {notifications.some(n => !n.read) && (
+                  <button
+                    onClick={() => markAllAsReadMutation.mutate()}
+                    disabled={markAllAsReadMutation.isPending}
+                    className="text-sm font-semibold text-brand hover:text-brand/80 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                  >
+                    Mark all as read
+                  </button>
                 )}
-                onClick={() => {
-                  if (!n.read) markAsReadMutation.mutate(n.id)
-                  // If it links to a post, open the post modal!
-                  if (n.entityId) {
-                    navigate({
-                      search: (prev) => ({ ...prev, notifications: undefined, post: n.entityId }),
-                    })
-                  } else if (n.type === 'follow' && n.actor) {
-                    // Navigate to user
-                    navigate({
-                      to: '/profile/$nickname',
-                      params: { nickname: n.actor.nickname }
-                    })
-                  }
-                }}
-              >
-                <div className="text-2xl mt-0.5">
-                  {getNotificationIcon(n.type)}
-                </div>
+                <button
+                  onClick={handleClose}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-surface-translucent text-text-s hover:text-text transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                  aria-label="Close notifications"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </header>
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm" style={{ color: 'var(--text)' }}>
-                    {n.actor && (
-                      <span className="font-bold mr-1" style={{ color: 'var(--text-h)' }}>
-                        {n.actor.name}
-                      </span>
+            <div className="flex-1 overflow-y-auto flex flex-col custom-scrollbar">
+              {notifications.length > 0 ? (
+                notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    className={cn(
+                      "p-5 flex items-start gap-4 cursor-pointer transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)] border-b border-border last:border-0 hover:bg-surface-translucent",
+                      !n.read && "bg-brand/5"
                     )}
-                    {n.message || `interacted with your content`}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-s)' }}>
-                    {formatRelativeTime(new Date(n.createdAt))}
-                  </p>
-                </div>
+                    onClick={() => {
+                      if (!n.read) markAsReadMutation.mutate(n.id)
+                      if (n.entityId) {
+                        const entityId = n.entityId
+                        navigate({
+                          search: (prev) => ({ ...prev, notifications: undefined, post: entityId }),
+                        })
+                      } else if (n.type === 'follow' && n.actor) {
+                        navigate({
+                          to: '/profile/$nickname',
+                          params: { nickname: n.actor.nickname ?? '' }
+                        })
+                      }
+                    }}>
+                    <div className="w-12 h-12 shrink-0 rounded-full bg-surface flex items-center justify-center text-text shadow-sm border border-border">
+                      {getNotificationIcon(n.type)}
+                    </div>
 
-                {!n.read && (
-                  <div className="w-2 h-2 rounded-full self-center" style={{ background: 'var(--accent)' }} />
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="py-24 flex flex-col items-center gap-3 text-center px-6">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl" style={{ background: 'var(--accent-bg)' }}>
-                🔔
-              </div>
-              <p className="font-semibold text-lg" style={{ color: 'var(--text-h)' }}>All caught up!</p>
-              <p className="text-sm max-w-xs" style={{ color: 'var(--text-s)' }}>You don't have any notifications right now.</p>
+                    <div className="flex-1 min-w-0 flex flex-col pt-1">
+                      <p className="text-[15px] leading-snug text-text-s">
+                        {n.actor && (
+                          <span className="font-bold text-text mr-1">
+                            {n.actor.name}
+                          </span>
+                        )}
+                        {n.message || `interacted with your content`}
+                      </p>
+                      <p className="text-xs text-text-s mt-2 font-medium opacity-70">
+                        {formatRelativeTime(new Date(n.createdAt ?? Date.now()))}
+                      </p>
+                    </div>
+
+                    {!n.read && (
+                      <div className="w-2.5 h-2.5 rounded-full bg-brand mt-2 shrink-0 shadow-sm" />
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="w-20 h-20 bg-brand/10 text-brand rounded-full flex items-center justify-center mb-6 shadow-sm">
+                    <BellOff className="w-10 h-10" />
+                  </div>
+                  <p className="text-xl font-bold text-text mb-2">All caught up!</p>
+                  <p className="text-text-s max-w-[250px]">You don't have any notifications right now.</p>
+                </div>
+              )}
             </div>
-          )}
+          </motion.div>
         </div>
-      </div>
-    </>
+      )}
+    </AnimatePresence>
   )
 }

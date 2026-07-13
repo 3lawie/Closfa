@@ -38,6 +38,16 @@ export interface StoredMediaDetails {
     duration?: number
 }
 
+/** Non-destructive edit parameters — the stored blob is always the untouched
+ *  original; these are only baked into a real image at publish time (see
+ *  src/lib/utils/imageEdit.ts). Percentages, resolution-independent. */
+export interface MediaEditParams {
+    crop: { x: number; y: number; width: number; height: number }
+    brightness: number
+    contrast: number
+    saturation: number
+}
+
 export interface StoredMedia {
     mediaId: string
     fileName: string
@@ -45,7 +55,7 @@ export interface StoredMedia {
     mimeType: string
     metadata: {
         originalMedia: StoredMediaDetails
-        editedMedia?: StoredMediaDetails
+        editParams?: MediaEditParams
     }
 }
 
@@ -68,6 +78,24 @@ export async function loadAllMedias(): Promise<StoredMedia[]> {
         const request = tx.objectStore(STORE_NAME).getAll()
         request.onsuccess = () => resolve(request.result)
         request.onerror = () => reject(request.error)
+    })
+}
+
+/** Patch just the metadata of an existing entry (e.g. saving edit params)
+ *  without touching its stored blob — keeps editing non-destructive. */
+export async function updateMediaMetadata(mediaId: string, metadata: StoredMedia["metadata"]): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite")
+        const store = tx.objectStore(STORE_NAME)
+        const getReq = store.get(mediaId)
+        getReq.onsuccess = () => {
+            const record = getReq.result as StoredMedia | undefined
+            if (record) store.put({ ...record, metadata })
+        }
+        getReq.onerror = () => reject(getReq.error)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
     })
 }
 

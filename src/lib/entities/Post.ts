@@ -32,7 +32,7 @@ export const MediaZod = z.object({
   fileSize: z.number().int().positive().optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
-  duration: z.number().int().positive().optional(),
+  duration: z.number().positive().optional().transform(val => val !== undefined ? Math.max(1, Math.round(val)) : undefined).optional(),
   category: z.array(z.string()).optional(),
 })
 
@@ -46,7 +46,10 @@ export const PostAuthor = z.object({
     isVerified: z.boolean(),
     avatar: z.string().nullable(),
     followers: z.number().optional(),
-    following: z.number().optional()
+    following: z.number().optional(),
+    // Aware-intention preference (see schema.ts) — hides like/comment/share/
+    // view counts on this author's posts, for every viewer, not just them.
+    hideEngagementCounts: z.boolean().default(false),
   }).nullable()
 })
 
@@ -65,6 +68,10 @@ export const Post = z.object({
   shares: z.number(),
   views: z.number(),
   media: z.array(MediaZod),
+  // snake_case (not postType/postCategory's camelCase above) — this
+  // matches the actual runtime key the relational query returns, since the
+  // schema.ts column is declared as `media_quality`, not aliased to camelCase.
+  media_quality: z.enum(['compressed', 'original']).default('compressed'),
 })
 
 export type Post = z.infer<typeof Post>

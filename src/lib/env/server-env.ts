@@ -13,6 +13,10 @@ const serverEnvSchema = z.object({
   AUTH0_CLIENT_ID: z.string().min(1, 'AUTH0_CLIENT_ID is required'),
   AUTH0_CLIENT_SECRET: z.string().min(1, 'AUTH0_CLIENT_SECRET is required'),
   SESSION_SECRET: z.string().min(1, 'SESSION_SECRET is required'),
+  // Optional: the email that auto-becomes the site's sole 'owner' role on
+  // first signup. Unset in environments that don't need an owner bootstrapped
+  // (e.g. preview branches) — upsertAuthUser skips the grant when absent.
+  OWNER_EMAIL: z.string().email().optional(),
 })
 
 type RawServerEnv = z.infer<typeof serverEnvSchema>
@@ -63,5 +67,8 @@ export const serverEnv = {
   },
   get sessionSecret() {
     return env().SESSION_SECRET
+  },
+  get ownerEmail() {
+    return env().OWNER_EMAIL
   },
 }

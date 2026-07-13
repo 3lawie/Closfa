@@ -1,19 +1,27 @@
 import '../index.css'
-import { createRootRouteWithContext, Outlet, HeadContent, Scripts, Link } from '@tanstack/react-router'
+import { createRootRouteWithContext, Outlet, HeadContent, Scripts, useRouterState } from '@tanstack/react-router'
 import { z } from 'zod'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ImageKitProvider } from '@imagekit/react'
 import { clientEnv } from '../lib/env/client-env'
-import { getSession } from '@/server/lib/session'
+import { getSession, toPublicSession } from '@/server/lib/session'
 import type { QueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   // The ONE session fetch for the whole route tree (README Rule 1). Every
   // route below reads `context.session` / `context.sessionStatus` instead of
   // calling getSession() again — child beforeLoad/loaders must not re-fetch.
+  //
+  // `context.session` only ever carries the public subset (userId/name/
+  // nickname) from here down — email/sub/issuedAt/expiresAt never leave the
+  // server. Anything server-side that genuinely needs the full session reads
+  // it independently through a server function's own authMiddleware (see
+  // middleware.ts), which is a separate, unaffected code path from this
+  // router-level context.
   beforeLoad: async () => {
     const result = await getSession()
-    return { session: result.session, sessionStatus: result.status }
+    return { session: toPublicSession(result.session), sessionStatus: result.status }
   },
   validateSearch: z.object({
     post: z.string().optional(),
@@ -24,113 +32,101 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 import { PostModal } from '@/components/feed/PostModal'
 import { NotificationsDrawer } from '@/components/feed/NotificationsDrawer'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
+import { AccountRail } from '@/components/layout/AccountRail'
+import { Logo } from '@/components/layout/Logo'
+import { Toaster } from '@/components/ui/Toast'
 
 function RootLayout() {
   const { queryClient, session } = Route.useRouteContext()
+  const matches = useRouterState({ select: (s) => s.matches })
+  const currentPath = matches[matches.length - 1]?.routeId || 'unknown'
 
   return (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta charSet="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <title>Closfa</title>
-        <HeadContent />
+        <link rel="preconnect" href="https://fonts.googleapis.com"/>
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            try {
+              if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
+              }
+            } catch (e) {}
+          `
+        }}/>
+        <HeadContent/>
       </head>
-      <body className="bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 min-h-screen font-sans">
+      <body className="bg-bg text-text min-h-screen font-sans selection:bg-brand/20">
         <QueryClientProvider client={queryClient}>
           <ImageKitProvider urlEndpoint={clientEnv.imagekitUrlEndpoint}>
             {session ? (
-              <div className="flex min-h-screen">
-                {/* ── Left Navigation Sidebar ── */}
-                <aside 
-                  className="w-64 border-r hidden md:flex flex-col justify-between sticky top-0 h-screen p-6"
-                  style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
-                >
-                  <div className="flex flex-col gap-8">
-                    <Link to="/" className="text-2xl font-black tracking-tight" style={{ color: 'var(--brand)' }}>
-                      Closfa.
-                    </Link>
-
-                    <nav className="flex flex-col gap-2">
-                      <Link 
-                        to="/" 
-                        className="flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all"
-                        activeProps={{ style: { color: 'var(--accent)', background: 'var(--accent-bg)' } }}
-                      >
-                        <span>🏠</span> Feed
-                      </Link>
-                      <Link 
-                        to="/create" 
-                        className="flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all"
-                        activeProps={{ style: { color: 'var(--accent)', background: 'var(--accent-bg)' } }}
-                      >
-                        <span>✍️</span> Publish
-                      </Link>
-                      <Link 
-                        to="/dashboard" 
-                        className="flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all"
-                        activeProps={{ style: { color: 'var(--accent)', background: 'var(--accent-bg)' } }}
-                      >
-                        <span>📊</span> Dashboard
-                      </Link>
-                      <Link
-                        search={(prev) => ({ ...prev, notifications: true })}
-                        className="flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all cursor-pointer"
-                        activeProps={{ style: { color: 'var(--accent)', background: 'var(--accent-bg)' } }}
-                      >
-                        <span>🔔</span> Notifications
-                      </Link>
-                    </nav>
-                  </div>
-
-                  {/* Profile/Logout anchor */}
-                  <a 
-                    href="/api/auth/logout" 
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                  >
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm" style={{ background: 'var(--accent)' }}>
-                      {session.name.charAt(0).toUpperCase()}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate">{session.name}</p>
-                      <p className="text-xs truncate" style={{ color: 'var(--text-s)' }}>@{session.nickname}</p>
-                    </div>
-                  </a>
-                </aside>
-
+              <div className="min-h-screen bg-bg">
                 {/* ── Main Content Area ── */}
-                <div className="flex-1 flex flex-col min-h-screen">
+                <main className="flex flex-col min-h-screen w-full max-w-4xl mx-auto lg:px-8">
                   {/* Top Bar for Mobile viewports */}
-                  <header 
-                    className="md:hidden h-16 border-b flex items-center justify-between px-6 sticky top-0 z-40 backdrop-blur-md"
-                    style={{ background: 'var(--surface-translucent)', borderColor: 'var(--border)' }}
+                  <header
+                    className="lg:hidden h-16 flex items-center justify-between px-6 sticky top-0 z-40 bg-surface-translucent backdrop-blur-xl border-b border-border"
                   >
-                    <Link to="/" className="text-xl font-black tracking-tight" style={{ color: 'var(--brand)' }}>
-                      Closfa.
-                    </Link>
-                    <div className="flex items-center gap-4">
-                      <Link search={(prev) => ({ ...prev, notifications: true })} className="cursor-pointer">🔔</Link>
-                      <a href="/api/auth/logout" className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: 'var(--accent)' }}>
-                        {session.name.charAt(0).toUpperCase()}
-                      </a>
-                    </div>
+                    <Logo />
+                    <ThemeToggle iconOnly />
                   </header>
 
-                  <div className="flex-1">
-                    <Outlet />
+                  <div className="flex-1 lg:py-8 lg:px-0 px-4 py-6 pb-24 overflow-x-hidden">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={currentPath}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -15 }}
+                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                        className="h-full"
+                      >
+                        <Outlet/>
+                      </motion.div>
+                    </AnimatePresence>
                   </div>
+                </main>
+
+                <div className="hidden lg:flex fixed top-5 left-5 z-40 items-center gap-4">
+                  <Logo />
+                  <ThemeToggle iconOnly />
                 </div>
+                <AccountRail session={session} />
               </div>
             ) : (
-              <div className="min-h-screen">
-                <Outlet />
+              <div className="min-h-screen bg-bg flex flex-col">
+                <header className="h-16 flex items-center justify-between px-6 sticky top-0 z-40 bg-surface-translucent backdrop-blur-xl border-b border-border">
+                  <Logo />
+                  <ThemeToggle iconOnly />
+                </header>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentPath}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                    className="flex-1 flex flex-col"
+                  >
+                    <Outlet/>
+                  </motion.div>
+                </AnimatePresence>
               </div>
             )}
-            <PostModal />
-            <NotificationsDrawer />
+            <PostModal/>
+            <NotificationsDrawer/>
+            <Toaster/>
           </ImageKitProvider>
         </QueryClientProvider>
-        <Scripts />
+        <Scripts/>
       </body>
     </html>
   )

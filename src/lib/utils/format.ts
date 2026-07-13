@@ -59,6 +59,37 @@ export function formatDuration(seconds: number | null | undefined): string {
 }
 
 
+const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * A user's `name` field is whatever their auth provider sent — for some
+ * connections (notably email/password) that's literally the email address,
+ * which must never render as a public display name. Falls back to the
+ * nickname (user-chosen, safe) and only to a fully generic label if even
+ * that's missing — never anything derived from the email itself, since
+ * showing even part of it (e.g. the local part) is the same leak.
+ */
+export function safeDisplayName(name: string | null | undefined, nickname?: string | null): string {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || EMAIL_LIKE.test(trimmed)) {
+    return nickname ? nickname : 'Member'
+  }
+  return trimmed
+}
+
+/**
+ * True when a chosen nickname would itself expose the account's email —
+ * either the raw local part (before the @) or the same value with the
+ * common separators stripped, since "boom.41167" vs "boom41167" is the same
+ * leak with extra steps. Used to reject a nickname at claim/change time
+ * rather than only cleaning it up after the fact everywhere it's displayed.
+ */
+export function isEmailDerivedNickname(nickname: string, email: string): boolean {
+  const localPart = email.split('@')[0]?.toLowerCase().replace(/[._-]/g, '') ?? ''
+  const candidate = nickname.toLowerCase().replace(/[._-]/g, '')
+  return localPart.length > 0 && candidate === localPart
+}
+
 export function computeResolution(width: number, height: number): 'SD' | 'HD' | 'FHD' | 'QHD' | 'UHD' {
   const shorter = Math.min(width, height)
   if (shorter >= 2160) return 'UHD'

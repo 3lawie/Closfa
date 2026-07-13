@@ -1,10 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, numeric, pgEnum, pgTable, primaryKey, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, numeric, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 
 export const postStatusEnum = pgEnum("post_status", [
-    "editing", "draft", "pending", "published", "unpublished", "archived", "rejected"
+    "editing", "draft", "pending", "published", "unpublished", "archived", "rejected", "removed"
 ])
 
 export const postTypeEnum = pgEnum("post_type", [
@@ -23,6 +23,16 @@ export const mediaTypeEnum = pgEnum("media_type", [
 // SD = below 720p, HD = 720p, FHD = 1080p, QHD = 1440p, UHD = 4K+
 export const resolutionEnum = pgEnum("resolution", [
     "SD", "HD", "FHD", "QHD", "UHD"
+])
+
+// Author-chosen default display quality for a post's images — the feed and
+// lightbox both request the compressed AVIF by default (bandwidth); a post
+// set to "original" has its viewers' initial request skip straight to the
+// untransformed file instead. Independent of the lightbox's own per-view
+// "View full resolution" / format-toggle controls, which always work
+// regardless of this default.
+export const mediaQualityEnum = pgEnum("media_quality", [
+    "compressed", "original"
 ])
 
 // ──────────────────────────────────────────────────────────────
@@ -84,6 +94,12 @@ export const user = pgTable("user", {
     authProviderId: text("auth_provider_id").notNull(),
     authProvider: text("auth_provider").notNull().default("email"),
     emailVerified: boolean("email_verified").notNull().default(false),
+    // Account-level moderation sanction (ban_user audit action). A banned
+    // user's existing session is rejected on their next request — see
+    // authMiddleware — not just blocked at login.
+    isBanned: boolean("is_banned").notNull().default(false),
+    bannedAt: timestamp("banned_at"),
+    banReason: text("ban_reason"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
@@ -114,6 +130,11 @@ export const profile = pgTable("profile", {
     location: text("location"),
     avatar: varchar("image").references(() => media.media_id),
     isVerified: boolean("is_verified").notNull().default(false),
+    // Aware-intention preference: replaces numeric like/view counts with
+    // neutral icons on posts, for this viewer only — same "hide like counts"
+    // pattern Instagram/Twitter both eventually shipped as an anti-anxiety
+    // opt-in, not a change to what's stored or what anyone else sees.
+    hideEngagementCounts: boolean("hide_engagement_counts").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 })
@@ -138,10 +159,15 @@ export const post = pgTable("post", {
     post_type: postTypeEnum("post_type").notNull().default("solo"),
     is_published: boolean("is_published").notNull().default(false),
     published_at: timestamp("published_at"),
+    // Admin's explanation, shown to the owner — set on soft-delete (sent
+    // back to draft for a fix) and complete-delete (final, shown in the
+    // owner's post history). Cleared when a resubmitted draft is approved.
+    moderationReason: text("moderation_reason"),
     views: integer("views").notNull().default(0),
     likes: integer("likes").notNull().default(0),
     comments: integer("comments").notNull().default(0),
     shares: integer("shares").notNull().default(0),
+    media_quality: mediaQualityEnum("media_quality").notNull().default("compressed"),
 }, (table) => ({
     postAuthorIndex: index("post_author_index").on(table.author_id, table.post_status),
     postStatusIndex: index("post_status_index").on(table.post_status),
@@ -176,9 +202,16 @@ export const postToCategory = pgTable("post_to_category", {
     pk: primaryKey({ columns: [table.post_id, table.category_name] }),
 }))
 
+// Collab-post co-author invites. A row existing means "invited"; `accepted`
+// tracks whether they've agreed yet — the post's author list (and any
+// "co-authored by" display) should only count accepted rows, not just
+// membership in this table.
 export const postToUser = pgTable("post_to_user", {
     post_id: varchar("post_id").notNull().references(() => post.postId),
     user_id: varchar("user_id").notNull().references(() => user.userId),
+    accepted: boolean("accepted").notNull().default(false),
+    invitedAt: timestamp("invited_at").defaultNow(),
+    respondedAt: timestamp("responded_at"),
 }, (table) => ({
     pk: primaryKey({ columns: [table.post_id, table.user_id] }),
 }))
@@ -279,7 +312,7 @@ export const auditLog = pgTable("audit_log", {
 })
 
 export const notificationTypeEnum = pgEnum("notification_type", [
-    "like", "comment", "reply", "follow", "mention", "system", "moderation"
+    "like", "comment", "reply", "follow", "mention", "system", "moderation", "collab_invite"
 ])
 
 export const notification = pgTable("notification", {
@@ -311,10 +344,123 @@ export const subscription = pgTable("subscription", {
     updatedAt: timestamp("updated_at").defaultNow(),
 })
 
+// ──────────────────────────────────────────────────────────────
+// Site-wide (global) roles — distinct from profileRoleEnum, which is
+// scoped to a single profile's moderation team. Mirrors the same
+// enum + separate-table shape as profileMember: a row = a grant,
+// absence of a row = ordinary user.
+// ──────────────────────────────────────────────────────────────
+// Named "site_role_type", not "site_role" — Postgres implicitly creates a row
+// type for every table, and a table named "site_role" would collide with an
+// enum type of the identical name (confirmed by db:push failing on exactly
+// this: "type site_role already exists" when creating the table).
+export const siteRoleEnum = pgEnum("site_role_type", [
+    "owner", "admin", "senior_moderator", "moderator"
+])
+
+export const siteRole = pgTable("site_role", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    userId: varchar("user_id").notNull().unique().references(() => user.userId),
+    role: siteRoleEnum("role").notNull(),
+    assignedAt: timestamp("assigned_at").defaultNow(),
+    assignedBy: varchar("assigned_by").references(() => user.userId), // null only for the bootstrap owner
+}, (table) => ({
+    // DB-enforced: at most one 'owner' row can ever exist
+    siteRoleSingleOwnerIndex: uniqueIndex("site_role_single_owner_idx").on(table.role).where(sql`${table.role} = 'owner'`),
+}))
+
+// One-time-use redeemable key that grants a site role. The plaintext code is
+// shown to its creator exactly once; only its SHA-256 hash is stored. role is
+// never trusted from the code string itself — codePrefix is a cosmetic label
+// only (e.g. "ADM-"), the grant always re-reads `role` from this row.
+export const roleGrant = pgTable("role_grant", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    codeHash: varchar("code_hash").notNull().unique(),
+    codePrefix: varchar("code_prefix").notNull(),
+    role: siteRoleEnum("role").notNull(),
+    createdBy: varchar("created_by").notNull().references(() => user.userId),
+    redeemedBy: varchar("redeemed_by").references(() => user.userId),
+    redeemedAt: timestamp("redeemed_at"),
+    expiresAt: timestamp("expires_at").notNull().default(sql`now() + interval '7 days'`),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    roleGrantNotOwner: check("role_grant_not_owner", sql`${table.role} <> 'owner'`),
+}))
+
+// Who blocks whom — mirrors the follow table's directional shape.
+export const userBlock = pgTable("user_block", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    blockerId: varchar("blocker_id").notNull().references(() => user.userId),
+    blockedId: varchar("blocked_id").notNull().references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    userBlockUnique: unique("user_block_unique").on(table.blockerId, table.blockedId),
+    blockerIndex: index("user_block_blocker_index").on(table.blockerId),
+    blockedIndex: index("user_block_blocked_index").on(table.blockedId),
+}))
+
+// Per-user saved posts — mirrors postLike's idempotent-unique shape.
+export const savedPost = pgTable("saved_post", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    postId: varchar("post_id").notNull().references(() => post.postId),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    savedPostUnique: unique("saved_post_unique").on(table.postId, table.userId),
+    savedPostUserIndex: index("saved_post_user_index").on(table.userId),
+}))
+
+// Idempotent-unique like on a comment — mirrors postLike's shape exactly.
+export const commentLike = pgTable("comment_like", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    commentId: varchar("comment_id").notNull().references(() => comment.comment_id),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    commentLikeUnique: unique("comment_like_unique").on(table.commentId, table.userId),
+    commentLikeUserIndex: index("comment_like_user_index").on(table.userId),
+}))
+
+// Same shape, one level down — a like on a reply rather than a top-level comment.
+export const commentReplyLike = pgTable("comment_reply_like", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    replyId: varchar("reply_id").notNull().references(() => commentReply.reply_id),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    commentReplyLikeUnique: unique("comment_reply_like_unique").on(table.replyId, table.userId),
+    commentReplyLikeUserIndex: index("comment_reply_like_user_index").on(table.userId),
+}))
+
+// Per-user, per-notification-type opt-out. Absence of a row for a given
+// (userId, type) pair means "enabled" (the default) — this table only ever
+// holds the exceptions, not a full row per user per type.
+export const notificationPreference = pgTable("notification_preference", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    type: notificationTypeEnum("type").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+}, (table) => ({
+    notificationPreferenceUnique: unique("notification_preference_unique").on(table.userId, table.type),
+}))
+
+// Feed-level keyword mute — posts whose content contains a muted word are
+// filtered out of that user's own feed queries only (never a global filter).
+export const mutedKeyword = pgTable("muted_keyword", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    userId: varchar("user_id").notNull().references(() => user.userId),
+    keyword: varchar("keyword", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    mutedKeywordUnique: unique("muted_keyword_unique").on(table.userId, table.keyword),
+    mutedKeywordUserIndex: index("muted_keyword_user_index").on(table.userId),
+}))
+
 export const schema = {
     user, follow, profile,
     categories, post, postLike, postToCategory,
-    comment, commentReply,
+    comment, commentReply, commentLike, commentReplyLike,
     media, postToUser, postToMedia,
-    profileMember, report, auditLog, notification, subscription
+    profileMember, report, auditLog, notification, notificationPreference, subscription,
+    siteRole, roleGrant, userBlock, savedPost, mutedKeyword,
 };

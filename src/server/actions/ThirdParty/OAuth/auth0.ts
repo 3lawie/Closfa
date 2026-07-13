@@ -280,13 +280,25 @@ export function getAuth0LogoutUrl(): string {
 }
 
 export function validateAndNormalizeUserInfo(userInfo: UserInfoFromToken) {
-  // Normalize nickname: sanitize to safe chars, max 30
-  const rawNickname = userInfo.nickname || userInfo.email.split('@')[0]
-  const nickname = rawNickname.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)
+  // Normalize nickname: sanitize to safe chars, max 30. Deliberately no
+  // `|| email.split('@')[0]` fallback — this value is discarded anyway
+  // (upsertAuthUser always stores `nickname: null` for a new user, the real
+  // nickname only ever comes from the onboarding claim), and an email-
+  // derived fallback here is a privacy footgun waiting for a future caller
+  // to start trusting it as a display value.
+  const nickname = (userInfo.nickname ?? '').replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 30)
 
   // Derive auth provider name from Auth0 sub prefix
   // e.g. "auth0|abc" → "auth0", "google-oauth2|abc" → "google-oauth2"
   const authProvider = userInfo.sub.split('|')[0] || 'auth0'
 
-  return { ...userInfo, nickname, authProvider }
+  // Email/password connections (and some social ones without a display
+  // name) have Auth0 send the email address itself as `name` — stored
+  // as-is, that becomes a user's public display name everywhere in the
+  // app. Never store an email-shaped value here; "New user" is safe and
+  // temporary — the onboarding nickname claim is what actually identifies
+  // them going forward, and profile settings let them set a real name.
+  const name = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userInfo.name.trim()) ? 'New user' : userInfo.name
+
+  return { ...userInfo, name, nickname, authProvider }
 }

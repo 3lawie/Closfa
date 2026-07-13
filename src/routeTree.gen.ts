@@ -11,14 +11,17 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as TodoRouteImport } from './routes/Todo'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProfileNicknameRouteImport } from './routes/profile.$nickname'
 import { Route as PostPostIdRouteImport } from './routes/post.$postId'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedSavedRouteImport } from './routes/_authenticated/saved'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedMyPostsRouteImport } from './routes/_authenticated/my-posts'
 import { Route as AuthenticatedModeratorRouteImport } from './routes/_authenticated/moderator'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
+import { Route as ApiAuthMockLoginRouteImport } from './routes/api/auth/mock-login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
@@ -30,11 +33,6 @@ const OnboardingRoute = OnboardingRouteImport.update({
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TodoRoute = TodoRouteImport.update({
-  id: '/Todo',
-  path: '/Todo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -52,12 +50,27 @@ const PostPostIdRoute = PostPostIdRouteImport.update({
   path: '/post/$postId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSavedRoute = AuthenticatedSavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedNotificationsRoute =
   AuthenticatedNotificationsRouteImport.update({
     id: '/notifications',
     path: '/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedMyPostsRoute = AuthenticatedMyPostsRouteImport.update({
+  id: '/my-posts',
+  path: '/my-posts',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedModeratorRoute = AuthenticatedModeratorRouteImport.update({
   id: '/moderator',
   path: '/moderator',
@@ -72,6 +85,11 @@ const AuthenticatedCreateRoute = AuthenticatedCreateRouteImport.update({
   id: '/create',
   path: '/create',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiAuthMockLoginRoute = ApiAuthMockLoginRouteImport.update({
+  id: '/api/auth/mock-login',
+  path: '/api/auth/mock-login',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
   id: '/api/auth/logout',
@@ -91,97 +109,114 @@ const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/Todo': typeof TodoRoute
   '/onboarding': typeof OnboardingRoute
   '/create': typeof AuthenticatedCreateRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/moderator': typeof AuthenticatedModeratorRoute
+  '/my-posts': typeof AuthenticatedMyPostsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/saved': typeof AuthenticatedSavedRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/Todo': typeof TodoRoute
   '/onboarding': typeof OnboardingRoute
   '/create': typeof AuthenticatedCreateRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/moderator': typeof AuthenticatedModeratorRoute
+  '/my-posts': typeof AuthenticatedMyPostsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/saved': typeof AuthenticatedSavedRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/Todo': typeof TodoRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/moderator': typeof AuthenticatedModeratorRoute
+  '/_authenticated/my-posts': typeof AuthenticatedMyPostsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/saved': typeof AuthenticatedSavedRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/Todo'
     | '/onboarding'
     | '/create'
     | '/dashboard'
     | '/moderator'
+    | '/my-posts'
     | '/notifications'
+    | '/saved'
+    | '/settings'
     | '/post/$postId'
     | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/mock-login'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/Todo'
     | '/onboarding'
     | '/create'
     | '/dashboard'
     | '/moderator'
+    | '/my-posts'
     | '/notifications'
+    | '/saved'
+    | '/settings'
     | '/post/$postId'
     | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/mock-login'
   id:
     | '__root__'
     | '/'
-    | '/Todo'
     | '/_authenticated'
     | '/onboarding'
     | '/_authenticated/create'
     | '/_authenticated/dashboard'
     | '/_authenticated/moderator'
+    | '/_authenticated/my-posts'
     | '/_authenticated/notifications'
+    | '/_authenticated/saved'
+    | '/_authenticated/settings'
     | '/post/$postId'
     | '/profile/$nickname'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/mock-login'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  TodoRoute: typeof TodoRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   PostPostIdRoute: typeof PostPostIdRoute
@@ -189,6 +224,7 @@ export interface RootRouteChildren {
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
+  ApiAuthMockLoginRoute: typeof ApiAuthMockLoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -205,13 +241,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/Todo': {
-      id: '/Todo'
-      path: '/Todo'
-      fullPath: '/Todo'
-      preLoaderRoute: typeof TodoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -235,11 +264,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PostPostIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/saved': {
+      id: '/_authenticated/saved'
+      path: '/saved'
+      fullPath: '/saved'
+      preLoaderRoute: typeof AuthenticatedSavedRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/notifications': {
       id: '/_authenticated/notifications'
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/my-posts': {
+      id: '/_authenticated/my-posts'
+      path: '/my-posts'
+      fullPath: '/my-posts'
+      preLoaderRoute: typeof AuthenticatedMyPostsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/moderator': {
@@ -262,6 +312,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/create'
       preLoaderRoute: typeof AuthenticatedCreateRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/auth/mock-login': {
+      id: '/api/auth/mock-login'
+      path: '/api/auth/mock-login'
+      fullPath: '/api/auth/mock-login'
+      preLoaderRoute: typeof ApiAuthMockLoginRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/auth/logout': {
       id: '/api/auth/logout'
@@ -291,14 +348,20 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedModeratorRoute: typeof AuthenticatedModeratorRoute
+  AuthenticatedMyPostsRoute: typeof AuthenticatedMyPostsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedSavedRoute: typeof AuthenticatedSavedRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedModeratorRoute: AuthenticatedModeratorRoute,
+  AuthenticatedMyPostsRoute: AuthenticatedMyPostsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedSavedRoute: AuthenticatedSavedRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -307,7 +370,6 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  TodoRoute: TodoRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   PostPostIdRoute: PostPostIdRoute,
@@ -315,6 +377,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
+  ApiAuthMockLoginRoute: ApiAuthMockLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
