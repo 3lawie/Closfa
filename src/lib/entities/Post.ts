@@ -34,6 +34,10 @@ export const MediaZod = z.object({
   height: z.number().int().positive().optional(),
   duration: z.number().positive().optional().transform(val => val !== undefined ? Math.max(1, Math.round(val)) : undefined).optional(),
   category: z.array(z.string()).optional(),
+  // Video-only: a frame grab generated client-side and uploaded alongside
+  // the video (see src/lib/media/thumbnailWorker.ts). Null until that
+  // background job finishes.
+  thumbnailUrl: z.string().nullable().optional(),
 })
 
 export type Media = z.infer<typeof MediaZod>

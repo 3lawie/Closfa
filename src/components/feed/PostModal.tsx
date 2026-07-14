@@ -27,8 +27,21 @@ export function PostModal() {
   // One record per opened postId, not per re-render — mirrors post.$postId.tsx.
   useEffect(() => {
     if (postId) recordPostViewFn({ data: { postId } })
-     
+
   }, [postId])
+
+  // Deep-link from a comment/reply notification — same scroll+highlight
+  // treatment as post.$postId.tsx.
+  const commentId = search.commentId
+  useEffect(() => {
+    if (!commentId || !post) return
+    const el = document.getElementById(`comment-${commentId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('bg-accent-bg/40', 'rounded-lg')
+    const timer = setTimeout(() => el.classList.remove('bg-accent-bg/40', 'rounded-lg'), 2500)
+    return () => clearTimeout(timer)
+  }, [commentId, post])
 
   const handleClose = () => {
     // Navigate without the post search param

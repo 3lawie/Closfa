@@ -26,6 +26,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   validateSearch: z.object({
     post: z.string().optional(),
     notifications: z.boolean().optional(),
+    // Set alongside `post` when a comment/reply notification is clicked, so
+    // PostModal can scroll to and highlight the specific comment.
+    commentId: z.string().optional(),
   }),
   component: RootLayout,
 })

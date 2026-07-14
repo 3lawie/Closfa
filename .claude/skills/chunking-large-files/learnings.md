@@ -1,0 +1,8 @@
+# Learnings
+
+Read before using this skill; append entries when a chunking mode surprises you (good or bad), so future runs don't rediscover the same thing.
+
+- **CodeChunker over-fragments without post-processing.** It delegates to `tree_sitter_language_pack.process()`, which emits one chunk per syntax node without merging small siblings (a lone closing brace or single import line becomes its own 1-2 token chunk). `scripts/chunk.py` has a `coalesce_chunks()` pass that greedily merges consecutive chunks up to `--chunk-size` after Chonkie runs — confirmed on `moderation.service.ts` (436 lines): 132 raw fragments → 47 well-sized chunks (130-200 tokens) after coalescing. If a future Chonkie version changes this behavior, re-test before assuming the merge step is still needed.
+- **`--tokenizer gpt2` gives real token counts**, not character counts (Chonkie's chunker default `tokenizer='character'` counts characters, which misrepresents actual LLM token budgets). The script defaults to `gpt2` for this reason.
+- **Marker needs its own Python 3.12 venv.** System Python here is 3.14 (very new); `regex` and `Pillow` (Marker's deps) don't have prebuilt wheels for 3.14 yet, and compiling needs MSVC Build Tools that weren't installed. Rather than install multi-GB build tools, a dedicated `py -3.12 -m venv ~/.claude/venvs/marker` sidesteps it entirely — prebuilt wheels exist for 3.12. Chonkie itself has no such issue and runs fine on system Python 3.14.
+- **CodeChunker also needs `tree-sitter-language-pack`** as a separate pip install beyond `chonkie` itself — not bundled by default. Has a prebuilt wheel for 3.14, no issues.

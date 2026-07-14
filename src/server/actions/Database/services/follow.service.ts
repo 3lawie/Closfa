@@ -37,7 +37,7 @@ export const followUser = createServerFn({ method: 'POST' })
         followedId: targetUserId,
       })
 
-      await createNotification({ recipientId: targetUserId, actorId: userId, type: 'follow', entityId: null })
+      await createNotification({ recipientId: targetUserId, actorId: userId, type: 'follow', entityId: null, postId: null })
 
       return ok({ alreadyFollowing: false })
     } catch (e) {

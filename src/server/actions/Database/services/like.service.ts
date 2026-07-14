@@ -1,9 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { and, eq, sql } from 'drizzle-orm'
-import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
+import { authMiddleware, optionalAuthMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
+import { queries } from '@/server/queries'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { createNotification } from './notification.service'
 
@@ -58,7 +59,7 @@ export const toggleLike = createServerFn({ method: 'POST' })
           .from(schema.post)
           .where(eq(schema.post.postId, postId))
         if (authorRow) {
-          await createNotification({ recipientId: authorRow.authorId, actorId: userId, type: 'like', entityId: postId })
+          await createNotification({ recipientId: authorRow.authorId, actorId: userId, type: 'like', entityId: postId, postId })
         }
 
         return ok({ liked: true, likes: row?.likes ?? 0 })
@@ -73,5 +74,27 @@ export const toggleLike = createServerFn({ method: 'POST' })
     } catch (e) {
       console.error('[toggleLike] Failed:', e)
       return err('INTERNAL_ERROR', 'Failed to update like')
+    }
+  })
+
+type PostLiker = { userId: string; name: string; nickname: string | null }
+
+/** Short "Liked by" list for a post — public, matching getPostFn's own reach (guests can already see who liked, same as the like count itself). */
+export const getPostLikersFn = createServerFn({ method: 'GET' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(z.object({ postId: z.string().min(1) }))
+  .handler(async ({ data }): Promise<ServerResult<PostLiker[]>> => {
+    try {
+      const likes = await queries.post.getLikers(data.postId)
+      // Drizzle mistypes this one-to-one `user` relation as an array in some
+      // configs (see moderation.service.ts's ProfileModeratorRow comment for
+      // the same quirk) — runtime always returns a single row per like.
+      const likers = (likes as unknown as { user: PostLiker | null }[])
+        .map((l) => l.user)
+        .filter((u): u is PostLiker => u !== null)
+      return ok(likers)
+    } catch (e) {
+      console.error('[getPostLikers] Failed:', e)
+      return err('INTERNAL_ERROR', 'Failed to load likers')
     }
   })

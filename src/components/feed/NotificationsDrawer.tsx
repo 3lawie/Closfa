@@ -36,6 +36,9 @@ export function NotificationsDrawer() {
     onSuccess: () => {
       refetch()
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      // Explicit — AccountRail's unread badge reads a distinct query key
+      // (['notifications', 'unreadCount']); don't rely on prefix-match alone.
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] })
     }
   })
 
@@ -44,6 +47,7 @@ export function NotificationsDrawer() {
     onSuccess: () => {
       refetch()
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] })
     }
   })
 
@@ -124,15 +128,20 @@ export function NotificationsDrawer() {
                     )}
                     onClick={() => {
                       if (!n.read) markAsReadMutation.mutate(n.id)
-                      if (n.entityId) {
-                        const entityId = n.entityId
+
+                      if (n.type === 'follow') {
+                        if (n.actor) navigate({ to: '/profile/$nickname', params: { nickname: n.actor.nickname ?? '' } })
+                        return
+                      }
+                      if (n.type === 'moderation') {
+                        navigate({ to: '/my-posts' })
+                        return
+                      }
+                      if (n.postId) {
+                        const postId = n.postId
+                        const commentId = (n.type === 'comment' || n.type === 'reply') ? (n.entityId ?? undefined) : undefined
                         navigate({
-                          search: (prev) => ({ ...prev, notifications: undefined, post: entityId }),
-                        })
-                      } else if (n.type === 'follow' && n.actor) {
-                        navigate({
-                          to: '/profile/$nickname',
-                          params: { nickname: n.actor.nickname ?? '' }
+                          search: (prev) => ({ ...prev, notifications: undefined, post: postId, commentId }),
                         })
                       }
                     }}>

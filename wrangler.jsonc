@@ -3,5 +3,15 @@
   "name": "closfa",
   "compatibility_date": "2026-06-04",
   "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
-  "main": "@tanstack/react-start/server-entry"
+  "main": "./src/worker-entry.ts",
+  "triggers": {
+    // Daily at 03:00 UTC — hard-purges any post past its 3-day
+    // scheduledPurgeAt grace period. See src/worker-entry.ts / server/lib/purgePost.ts.
+    "crons": ["0 3 * * *"]
+  },
+  // Whisper (transcription) + Llama (keyword/category/moderation pass) for
+  // the search-indexing background job — see src/server/lib/workersAi.ts.
+  "ai": {
+    "binding": "AI"
+  }
 }

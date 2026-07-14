@@ -59,6 +59,12 @@ export const media = pgTable("media", {
     // ── Temporal fields (video + audio only, NULL for image) ──
     duration: integer("duration"),                  // seconds
 
+    // Video-only: a still frame grabbed client-side (Worker + OffscreenCanvas,
+    // see src/lib/media/thumbnailWorker.ts) and uploaded to ImageKit
+    // alongside the video itself. Null until that background job finishes —
+    // the UI falls back to a plain type badge until then.
+    thumbnailUrl: varchar("thumbnail_url"),
+
     createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
     mediaUserIndex: index("media_user_index").on(table.user_id),
@@ -169,6 +175,17 @@ export const post = pgTable("post", {
     // back to draft for a fix) and complete-delete (final, shown in the
     // owner's post history). Cleared when a resubmitted draft is approved.
     moderationReason: text("moderation_reason"),
+    // Set when post_status becomes 'removed' (owner self-delete or admin
+    // complete-delete) — the daily purge cron hard-deletes the row once this
+    // passes, giving a 3-day undo/audit window instead of deleting instantly.
+    scheduledPurgeAt: timestamp("scheduled_purge_at"),
+    // Search — populated by the background job (see server/lib/postEnrichment.ts)
+    // that runs after publish for video/audio posts: Whisper transcription →
+    // RAKE/LLM keyword extraction. Text-only posts get keywords without a
+    // transcript. Both null until that job completes; search still works off
+    // `content` alone in the meantime (see the GIN index below).
+    transcript: text("transcript"),
+    keywords: text("keywords").array(),
     views: integer("views").notNull().default(0),
     likes: integer("likes").notNull().default(0),
     comments: integer("comments").notNull().default(0),
@@ -185,6 +202,28 @@ export const post = pgTable("post", {
     postPublishedAtPostIdIndex: index("post_published_at_post_id_index").on(table.published_at, table.postId),
     // Backs the "For You" scan: WHERE is_published ORDER BY likes DESC, published_at DESC.
     postFeedRankIndex: index("post_feed_rank_index").on(table.is_published, table.likes, table.published_at),
+    // Full-text search — a functional GIN index over content + keywords
+    // (transcript deliberately excluded: it's the noisiest text, and its
+    // real keywords already flow into the `keywords` column, so indexing it
+    // too would just double-count the same words and dilute ranking).
+    // coalesce() on both sides so a post with no keywords yet still matches
+    // on content alone.
+    //
+    // Calls closfa_post_tsvector(), NOT to_tsvector() directly — Postgres
+    // marks to_tsvector(regconfig, text) STABLE, not IMMUTABLE (the text
+    // search config it references is technically an alterable catalog
+    // object), so Postgres refuses it in an index expression outright, even
+    // with an explicit ::regconfig cast. The standard, documented fix is a
+    // thin SQL wrapper function explicitly declared IMMUTABLE — safe in
+    // practice since nobody alters the 'english' config after deploying.
+    // This function must exist in the database before this index can be
+    // created — see the one-time SQL noted in the project's db setup notes;
+    // `db:push` cannot create it itself (drizzle-kit only diffs tables/
+    // columns/indexes, not arbitrary functions).
+    postSearchIndex: index("post_search_index").using(
+        "gin",
+        sql`closfa_post_tsvector(${table.content}, ${table.keywords})`,
+    ),
 }))
 
 // Per-user likes. The unique(post_id, user_id) constraint makes liking
@@ -326,7 +365,15 @@ export const notification = pgTable("notification", {
     userId: varchar("user_id").notNull().references(() => user.userId),
     actorId: varchar("actor_id").references(() => user.userId),
     type: notificationTypeEnum("type").notNull(),
-    entityId: varchar("entity_id"), // Post ID, Comment ID, etc.
+    // The specific sub-target within postId, when one exists: a comment/reply's
+    // own id for 'comment'/'reply' types, the same value as postId otherwise
+    // (like/mention/collab_invite/moderation-on-a-post). null for types with
+    // no entity at all (follow, warn/ban-a-user moderation).
+    entityId: varchar("entity_id"),
+    // The containing post, always populated when one exists — lets the UI
+    // open the right post regardless of what entityId points to. No FK
+    // (matches entityId's own loose-reference precedent).
+    postId: varchar("post_id"),
     message: text("message"),
     read: boolean("read").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),

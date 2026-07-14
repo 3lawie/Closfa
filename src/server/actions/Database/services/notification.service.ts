@@ -31,26 +31,41 @@ async function isNotificationTypeEnabled(userId: string, type: EventNotification
  * Central writer for all event-driven notification types. Never throws — a
  * failed notification must not fail the like/comment/follow action that
  * triggered it. Skips self-notifications and respects per-type opt-outs.
+ *
+ * `postId` is the containing post (always populated when one exists, so the
+ * UI always has an unambiguous "where to open" value); `entityId` is the
+ * specific sub-target within it — the comment/reply's own id for
+ * `comment`/`reply`, the same value as `postId` otherwise. Both null for
+ * `follow` (no post context at all).
  */
 export async function createNotification(params: {
   recipientId: string
   actorId: string
   type: EventNotificationType
   entityId: string | null
+  postId: string | null
 }): Promise<void> {
-  const { recipientId, actorId, type, entityId } = params
+  const { recipientId, actorId, type, entityId, postId } = params
   if (recipientId === actorId) return
 
   try {
     if (!(await isNotificationTypeEnabled(recipientId, type))) return
 
-    if (type === 'like' && entityId) {
-      // Coalesce repeat likes on the same post into one row instead of one
-      // notification per like — the whole point of this app's "aware
-      // intention" premise is not recreating the infinite-ping problem it
-      // exists to avoid.
+    // Coalesce repeat activity of the same type into one row instead of one
+    // notification per event — the whole point of this app's "aware
+    // intention" premise is not recreating the infinite-ping problem it
+    // exists to avoid. `follow` has no postId to match on, so it coalesces
+    // on recipient+type alone; every other type matches on postId too so
+    // activity on different posts stays in separate rows.
+    const coalesceMatch = type === 'follow'
+      ? { userId: recipientId, type, read: false }
+      : postId
+        ? { userId: recipientId, type, postId, read: false }
+        : null
+
+    if (coalesceMatch) {
       const existing = await db.query.notification.findFirst({
-        where: w({ userId: recipientId, type: 'like', entityId, read: false }),
+        where: w(coalesceMatch),
       }) as unknown as { id: string; message: string | null } | undefined
 
       if (existing) {
@@ -59,7 +74,7 @@ export async function createNotification(params: {
         await db.update(schema.notification)
           .set({
             actorId,
-            message: `and ${othersCount} other${othersCount === 1 ? '' : 's'} liked your post`,
+            message: `and ${othersCount} other${othersCount === 1 ? '' : 's'} ${NOTIFICATION_MESSAGE[type]}`,
             createdAt: new Date(),
           })
           .where(eq(schema.notification.id, existing.id))
@@ -72,6 +87,7 @@ export async function createNotification(params: {
       actorId,
       type,
       entityId,
+      postId,
       message: NOTIFICATION_MESSAGE[type],
     })
   } catch (e) {
@@ -84,9 +100,10 @@ const MENTION_REGEX = /@([a-zA-Z0-9_]{1,30})/g
 /**
  * Extracts @nicknames from post/comment content and notifies each resolved
  * user once. Silent no-op on unknown nicknames — mentions are best-effort,
- * not a validated input surface.
+ * not a validated input surface. Always points at the containing post, not
+ * any specific comment a mention might appear inside.
  */
-export async function notifyMentions(content: string, actorId: string, entityId: string): Promise<void> {
+export async function notifyMentions(content: string, actorId: string, postId: string): Promise<void> {
   const nicknames = [...new Set([...content.matchAll(MENTION_REGEX)].map((m) => m[1]))]
   if (nicknames.length === 0) return
 
@@ -97,10 +114,10 @@ export async function notifyMentions(content: string, actorId: string, entityId:
       .where(inArray(schema.user.nickname, nicknames))
 
     await Promise.all(
-      mentioned.map((u) => createNotification({ recipientId: u.userId, actorId, type: 'mention', entityId })),
+      mentioned.map((u) => createNotification({ recipientId: u.userId, actorId, type: 'mention', entityId: postId, postId })),
     )
   } catch (e) {
-    logger.error('notifyMentions failed', { actorId, entityId }, e instanceof Error ? e : undefined)
+    logger.error('notifyMentions failed', { actorId, postId }, e instanceof Error ? e : undefined)
   }
 }
 

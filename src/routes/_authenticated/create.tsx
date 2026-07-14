@@ -6,7 +6,7 @@ import { MentionTextarea } from "@/components/feed/MentionTextarea"
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
 import { loadAllMedias, clearAllMedias } from "@/lib/utils/mediaDB"
 import { applyImageEdit } from "@/lib/utils/imageEdit"
-import { getImageKitAuth } from "@/server/actions/ThirdParty/ImageKit/imagekit.service"
+import { getImageKitAuthBatch } from "@/server/actions/ThirdParty/ImageKit/imagekit.service"
 import { createPostWithMedia } from "@/server/actions/Database/services/post.service"
 import { searchUsersByNicknameFn } from "@/server/actions/Database/services/user.service"
 import { upload } from "@imagekit/react"
@@ -35,6 +35,12 @@ function CreatePost() {
     })
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
     const [errorMessage, setErrorMessage] = useState("")
+    // Weighted publish stages, not a binary spinner — "Preparing" (edit bake),
+    // "Requesting upload access" (the one batched auth round trip), "Uploading
+    // media" (driven by real byte progress across every parallel upload), then
+    // "Publishing".
+    const [progress, setProgress] = useState(0)
+    const [stageLabel, setStageLabel] = useState("")
     const [showClearConfirm, setShowClearConfirm] = useState(false)
     const [mediaQuality, setMediaQuality] = useState<'compressed' | 'original'>('compressed')
     const [collaborator, setCollaborator] = useState<{ userId: string; nickname: string | null; name: string } | null>(null)
@@ -71,6 +77,8 @@ function CreatePost() {
     const handlePublish = async () => {
         setStatus('uploading')
         setErrorMessage("")
+        setProgress(0)
+        setStageLabel('Preparing…')
         try {
             const stored = await loadAllMedias()
             if (content.trim() === "" && stored.length === 0) {
@@ -79,25 +87,17 @@ function CreatePost() {
                 return
             }
 
-            const media: {
-                mediaUrl: string
-                mediaType: 'image' | 'video' | 'audio'
-                fileName: string
-                mimeType: string
-                fileSize?: number
-                width?: number
-                height?: number
-                duration?: number
-            }[] = []
-
-            for (const m of stored) {
+            // Stage 1 (0-5%): bake any pending image edits. Non-destructive up
+            // to this point (MediaEditModal only ever saved crop/adjustment
+            // params) — this is the one place they're actually baked into
+            // pixels, right before upload, so the staged original stays intact
+            // if the user navigates away without publishing. Runs in parallel
+            // (Promise.all, mirroring src/routes/index.tsx's loader) rather
+            // than the previous for...of — publishing used to take roughly
+            // N times as long as a single file for N attachments.
+            const prepared = await Promise.all(stored.map(async (m) => {
                 const { media_type, fileName, mimeType, duration } = m.metadata.originalMedia
                 let { fileSize, width, height } = m.metadata.originalMedia
-                // Editing is non-destructive up to this point (MediaEditModal
-                // only ever saved crop/adjustment params) — this is the one
-                // place they're actually baked into pixels, right before
-                // upload, so the staged original stays intact if the user
-                // navigates away without publishing.
                 let fileToUpload: Blob = m.blob
                 if (media_type === 'image' && m.metadata.editParams) {
                     const edited = await applyImageEdit(m.blob, m.metadata.editParams, mimeType)
@@ -106,34 +106,95 @@ function CreatePost() {
                     height = edited.height
                     fileSize = edited.blob.size
                 }
+                return { stored: m, media_type, fileName, mimeType, duration, fileSize, width, height, fileToUpload }
+            }))
+            setProgress(5)
 
-                const auth = await getImageKitAuth({
-                    data: {
-                        mimeType,
-                        fileSizeBytes: fileToUpload.size,
-                        fileName,
-                    },
+            // Stage 2 (5-15%): one batched auth call covering every file AND
+            // every paired thumbnail, instead of a separate round trip each —
+            // the token/signature are per-call-independent (see
+            // imagekit.service.ts), so batching costs nothing.
+            setStageLabel('Requesting upload access…')
+            type UploadJob = { kind: 'main' | 'thumb'; parentIndex: number; blob: Blob; fileName: string; mimeType: string }
+            const jobs: UploadJob[] = []
+            prepared.forEach((p, i) => {
+                jobs.push({ kind: 'main', parentIndex: i, blob: p.fileToUpload, fileName: p.fileName, mimeType: p.mimeType })
+                // A separately-uploaded file, not baked into the video's own
+                // ImageKit entry, since it needs its own small size/format
+                // independent of the source video. The background Worker
+                // (MediaContatiner.tsx) may not have finished by the time the
+                // user hits Publish — that's fine, best-effort below.
+                if (p.stored.thumbnailBlob) {
+                    jobs.push({ kind: 'thumb', parentIndex: i, blob: p.stored.thumbnailBlob, fileName: `${p.fileName}.thumb.webp`, mimeType: 'image/webp' })
+                }
+            })
+            const authTokens = jobs.length > 0
+                ? await getImageKitAuthBatch({
+                    data: { files: jobs.map((j) => ({ mimeType: j.mimeType, fileSizeBytes: j.blob.size, fileName: j.fileName })) },
                 })
-                const response = await upload({
-                    file: fileToUpload,
-                    fileName,
-                    token: auth.token,
-                    signature: auth.signature,
-                    expire: auth.expire,
-                    publicKey: clientEnv.imagekitPublicKey,
-                })
-                if (!response?.filePath) throw new Error(`Upload failed for ${fileName}`)
-                media.push({
-                    mediaUrl: response.filePath.replace(/^\//, ""),
-                    mediaType: media_type,
-                    fileName,
-                    mimeType,
-                    fileSize,
-                    width,
-                    height,
-                    duration: typeof duration === 'number' ? Math.max(1, Math.round(duration)) : undefined,
-                })
+                : []
+            setProgress(15)
+
+            // Stage 3 (15-90%): every upload in parallel, each contributing
+            // real byte progress (ImageKit's SDK exposes onProgress) toward
+            // one aggregate percentage weighted by file size.
+            setStageLabel('Uploading media…')
+            const totalBytes = jobs.reduce((sum, j) => sum + j.blob.size, 0) || 1
+            const loadedBytes = new Array(jobs.length).fill(0)
+            function reportUploadProgress() {
+                const loaded = loadedBytes.reduce((a: number, b: number) => a + b, 0)
+                setProgress(15 + Math.min(1, loaded / totalBytes) * 75)
             }
+
+            const uploadResults = await Promise.all(jobs.map(async (job, i) => {
+                const auth = authTokens[i]
+                try {
+                    const response = await upload({
+                        file: job.blob,
+                        fileName: job.fileName,
+                        token: auth.token,
+                        signature: auth.signature,
+                        expire: auth.expire,
+                        publicKey: clientEnv.imagekitPublicKey,
+                        onProgress: (event) => {
+                            if (event.lengthComputable) {
+                                loadedBytes[i] = event.loaded
+                                reportUploadProgress()
+                            }
+                        },
+                    })
+                    if (!response?.filePath) throw new Error(`Upload failed for ${job.fileName}`)
+                    return { job, filePath: response.filePath.replace(/^\//, "") as string | undefined }
+                } catch (uploadErr) {
+                    // Thumbnails stay best-effort, exactly as before — losing
+                    // one doesn't lose the whole post. A main file failing
+                    // still aborts the publish; there'd be nothing to point
+                    // the post's media row at otherwise.
+                    if (job.kind === 'thumb') {
+                        console.error('Thumbnail upload failed (non-fatal):', uploadErr)
+                        return { job, filePath: undefined }
+                    }
+                    throw uploadErr
+                }
+            }))
+            setProgress(90)
+
+            setStageLabel('Publishing…')
+            const media = prepared.map((p, i) => {
+                const mainResult = uploadResults.find((r) => r.job.kind === 'main' && r.job.parentIndex === i)
+                const thumbResult = uploadResults.find((r) => r.job.kind === 'thumb' && r.job.parentIndex === i)
+                return {
+                    mediaUrl: mainResult!.filePath!,
+                    mediaType: p.media_type,
+                    fileName: p.fileName,
+                    mimeType: p.mimeType,
+                    fileSize: p.fileSize,
+                    width: p.width,
+                    height: p.height,
+                    duration: typeof p.duration === 'number' ? Math.max(1, Math.round(p.duration)) : undefined,
+                    thumbnailUrl: thumbResult?.filePath,
+                }
+            })
 
             const res = await createPostWithMedia({
                 data: {
@@ -150,6 +211,7 @@ function CreatePost() {
                 return
             }
 
+            setProgress(100)
             await clearAllMedias()
             try { localStorage.removeItem(DRAFT_KEY) } catch { /* best-effort */ }
             setStatus('success')
@@ -196,6 +258,25 @@ function CreatePost() {
                 </header>
 
                 {/* Status messages */}
+                {status === 'uploading' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-surface p-4 rounded-lg border border-border mx-2 md:mx-0 flex flex-col gap-2"
+                    >
+                        <div className="flex items-center justify-between text-xs font-semibold text-text-s">
+                            <span>{stageLabel}</span>
+                            <span className="tabular-nums">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
+                            <motion.div
+                                className="h-full bg-accent rounded-full"
+                                animate={{ width: `${progress}%` }}
+                                transition={{ duration: 0.2, ease: 'easeOut' }}
+                            />
+                        </div>
+                    </motion.div>
+                )}
                 {status === 'error' && (
                     <motion.div
                         initial={{ opacity: 0, y: -10 }}

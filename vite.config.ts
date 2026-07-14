@@ -10,7 +10,11 @@ export default defineConfig({
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
     tanstackStart(),
     react(),
-    tsconfigPaths(),
+    // Explicit `projects` disables crawling for tsconfig.json files — without
+    // it, this plugin walks the whole workspace root and trips over the many
+    // tsconfig.json files vendored under "to read/" (reference material, not
+    // part of this app — see .gitignore/eslint.config.js/vite server.watch).
+    tsconfigPaths({ projects: ['tsconfig.json'] }),
     tailwindcss(),
   ],
   server: {

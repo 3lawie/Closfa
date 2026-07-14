@@ -39,7 +39,7 @@ export const createComment = createServerFn({ method: 'POST' })
         .from(schema.post)
         .where(eq(schema.post.postId, commentData.postId))
       if (postRow) {
-        await createNotification({ recipientId: postRow.authorId, actorId: userId, type: 'comment', entityId: commentData.postId })
+        await createNotification({ recipientId: postRow.authorId, actorId: userId, type: 'comment', entityId: newComment.commentId, postId: commentData.postId })
       }
       await notifyMentions(commentData.comment, userId, commentData.postId)
 
@@ -86,7 +86,7 @@ export const createReply = createServerFn({ method: 'POST' })
         .from(schema.comment)
         .where(eq(schema.comment.comment_id, replyData.parentCommentId))
       if (parentComment) {
-        await createNotification({ recipientId: parentComment.userId, actorId: userId, type: 'reply', entityId: replyData.postId })
+        await createNotification({ recipientId: parentComment.userId, actorId: userId, type: 'reply', entityId: newReply.replyId, postId: replyData.postId })
       }
       await notifyMentions(replyData.comment, userId, replyData.postId)
 

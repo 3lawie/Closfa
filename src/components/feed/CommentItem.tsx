@@ -153,7 +153,7 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
   const replies = comment.replies ?? []
 
   return (
-    <div className="group">
+    <div id={`comment-${comment.comment_id}`} className="group">
       <div className="flex items-start gap-4">
         <Link to="/profile/$nickname" params={{ nickname: comment.author?.nickname || '' }} className="shrink-0">
           <Avatar author={comment.author} size="md" />
@@ -307,7 +307,7 @@ function ReplyRow({ reply, currentUserId, onDelete }: { reply: CommentReply, cur
   })
 
   return (
-    <div className="relative flex items-start gap-3 group/reply">
+    <div id={`comment-${reply.reply_id}`} className="relative flex items-start gap-3 group/reply">
       <svg
         width="24" height="24" viewBox="0 0 24 24"
         className="absolute left-0 top-0 pointer-events-none"

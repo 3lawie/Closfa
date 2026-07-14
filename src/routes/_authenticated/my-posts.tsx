@@ -4,13 +4,13 @@ import { getPendingCollabInvitesFn, respondToCollabInviteFn } from '@/server/act
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { FileStack, Heart, MessageCircle, Share2, Eye, ExternalLink, Trash2, Users } from 'lucide-react'
+import { FileStack, Heart, MessageCircle, Share2, Eye, ExternalLink, Trash2, Users, Play } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { cn } from '@/lib/utils/cn'
 import { clientEnv } from '@/lib/env/client-env'
-import { formatRelativeTime, formatCount } from '@/lib/utils/format'
+import { formatRelativeTime, formatCount, formatTimeRemaining } from '@/lib/utils/format'
 import { toast } from '@/components/ui/Toast'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -26,13 +26,15 @@ type MyPost = {
   content: string | null
   post_status: string
   moderationReason: string | null
+  scheduledPurgeAt: Date | string | null
   likes: number
   comments: number
   shares: number
   views: number
   updatedAt: Date | string | null
-  media: { media_id: string; mediaUrl: string; media_type: string }[]
+  media: { media_id: string; mediaUrl: string; media_type: string; thumbnailUrl: string | null }[]
 }
+
 
 export const Route = createFileRoute('/_authenticated/my-posts')({
   loader: async () => {
@@ -146,13 +148,22 @@ function PostRow({ post, onChanged }: { post: MyPost; onChanged: () => void }) {
     <div className="p-5 md:p-6 border-b border-border last:border-0">
       <div className="flex gap-4">
         {thumbnail && (
-          <div className="w-16 h-16 rounded-md overflow-hidden bg-bg border border-border shrink-0">
+          <div className="w-28 h-28 rounded-md overflow-hidden bg-bg border border-border shrink-0 relative">
             {thumbnail.media_type === 'image' ? (
               <img
-                src={`${IK}/tr:w-160,h-160,c-at_max,f-avif/${thumbnail.mediaUrl}`}
+                src={`${IK}/tr:w-320,h-320,c-at_max,f-avif/${thumbnail.mediaUrl}`}
                 alt=""
                 className="w-full h-full object-cover"
               />
+            ) : thumbnail.media_type === 'video' && thumbnail.thumbnailUrl ? (
+              <>
+                <img
+                  src={`${IK}/tr:w-320,h-320,c-at_max,f-avif/${thumbnail.thumbnailUrl}`}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+                <Play className="absolute inset-0 m-auto w-8 h-8 text-white drop-shadow" fill="white" />
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-text-s text-xs font-semibold uppercase">
                 {thumbnail.media_type}
@@ -193,6 +204,12 @@ function PostRow({ post, onChanged }: { post: MyPost; onChanged: () => void }) {
               post.post_status === 'removed' ? 'text-danger bg-danger-hover/20 border-danger/30' : 'text-text-s bg-bg border-border'
             )}>
               {post.post_status === 'removed' ? 'Removed — ' : 'Admin note — '}{post.moderationReason}
+            </p>
+          )}
+
+          {post.post_status === 'removed' && post.scheduledPurgeAt && (
+            <p className="text-xs text-danger mt-2">
+              Pending deletion — permanently removed in {formatTimeRemaining(new Date(post.scheduledPurgeAt))}
             </p>
           )}
 

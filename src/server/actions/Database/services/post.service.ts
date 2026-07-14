@@ -10,6 +10,8 @@ import { eq, sql } from 'drizzle-orm'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
 import { notifyMentions } from './notification.service'
+import { enrichPostForSearch } from '@/server/lib/postEnrichment'
+import { waitUntil } from 'cloudflare:workers'
 
 /** Fetch a single post for the detail route. Public (guests and users). */
 const getPostInput = z.object({ postId: z.string().min(1) })
@@ -37,6 +39,8 @@ const createPostInput = z
           width: z.number().int().positive().optional(),
           height: z.number().int().positive().optional(),
           duration: z.number().positive().optional().transform(val => val !== undefined ? Math.max(1, Math.round(val)) : undefined).optional(),
+          // Video-only, best-effort — see src/lib/media/videoThumbnail.ts.
+          thumbnailUrl: z.string().optional(),
         }),
       )
       .max(10)
@@ -66,8 +70,10 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
     }
 
     try {
-      // Ensure the default category exists (post_category is a NOT NULL FK).
-      await db.insert(schema.categories).values({ name: 'general' }).onConflictDoNothing()
+      // 'general' (post_category is a NOT NULL FK into categories.name) is
+      // seeded once via scripts/seed-categories.mjs, not upserted here on
+      // every single publish — this used to be a DB round trip that could
+      // never do anything after the very first post the app ever created.
 
       // Normalize each media row to satisfy the media CHECK constraints:
       //   image → width/height set, duration null
@@ -85,6 +91,7 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
           width: m.mediaType === 'audio' ? null : m.width ?? null,
           height: m.mediaType === 'audio' ? null : m.height ?? null,
           duration: m.mediaType === 'image' ? null : m.duration ?? null,
+          thumbnailUrl: m.mediaType === 'video' ? m.thumbnailUrl ?? null : null,
         }))
         const inserted = await db
           .insert(schema.media)
@@ -122,7 +129,7 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
 
         try {
           await db.insert(schema.notification).values({
-            userId: collaboratorUserId, actorId: userId, type: 'collab_invite', entityId: postRow.postId,
+            userId: collaboratorUserId, actorId: userId, type: 'collab_invite', entityId: postRow.postId, postId: postRow.postId,
             message: 'invited you to be a collaborator on their post.',
           })
         } catch (notifyError) {
@@ -130,9 +137,20 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
         }
       }
 
+      // Not awaited — notifyMentions already wraps its own body in try/catch
+      // and never throws (notification.service.ts), and mention notices
+      // don't need to block the publish response any more than the
+      // enrichment job below does.
       if (content) {
-        await notifyMentions(content, userId, postRow.postId)
+        waitUntil(notifyMentions(content, userId, postRow.postId))
       }
+
+      // Search indexing (transcription + keyword extraction + moderation)
+      // — see postEnrichment.ts. waitUntil is required here, not optional:
+      // Cloudflare kills unawaited promises once the response is sent, so
+      // without it this job would just never run past whatever happened to
+      // finish before the client got its response.
+      waitUntil(enrichPostForSearch(postRow.postId))
 
       return ok({ postId: postRow.postId })
     } catch (e) {
@@ -148,13 +166,20 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
 //
 // Soft delete (flip status, keep the row) rather than cascade-deleting
 // comments/likes/media/ImageKit files: a "removed" post still needs to show
-// up — original content and all — on the admin post-control page, which a
-// hard delete would make impossible. `is_published: false` reuses the same
-// flag the feed queries already filter on, so removed posts disappear from
-// feeds/profiles for free without a second exclusion condition to maintain.
+// up — original content and all — on the admin post-control page for a
+// 3-day grace window (scheduledPurgeAt), after which the daily purge cron
+// (worker-entry.ts's scheduled() handler) hard-deletes it via purgePost().
+// `is_published: false` reuses the same flag the feed queries already filter
+// on, so removed posts disappear from feeds/profiles for free without a
+// second exclusion condition to maintain.
 export async function deletePostRecord(postId: string): Promise<void> {
   await db.update(schema.post)
-    .set({ post_status: 'removed', is_published: false, updatedAt: new Date() })
+    .set({
+      post_status: 'removed',
+      is_published: false,
+      scheduledPurgeAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    })
     .where(eq(schema.post.postId, postId))
 }
 
@@ -250,7 +275,7 @@ export const adminSoftDeletePostFn = createServerFn({ method: 'POST' })
       // a failed notification must not fail the moderation action itself.
       try {
         await db.insert(schema.notification).values({
-          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId,
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId, postId,
           message: `Your post was sent back for revision: ${reason}`,
         })
       } catch (notifyError) {
@@ -282,7 +307,13 @@ export const adminCompleteDeletePostFn = createServerFn({ method: 'POST' })
       if (!post) return err('NOT_FOUND', 'Post not found')
 
       await db.update(schema.post)
-        .set({ post_status: 'removed', is_published: false, moderationReason: reason, updatedAt: new Date() })
+        .set({
+          post_status: 'removed',
+          is_published: false,
+          moderationReason: reason,
+          scheduledPurgeAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.post.postId, postId))
 
       await db.insert(schema.auditLog).values({
@@ -291,7 +322,7 @@ export const adminCompleteDeletePostFn = createServerFn({ method: 'POST' })
 
       try {
         await db.insert(schema.notification).values({
-          userId: post.author_id, actorId: null, type: 'moderation', entityId: null,
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId, postId,
           message: `Your post was removed: ${reason}`,
         })
       } catch (notifyError) {
@@ -364,7 +395,7 @@ export const approvePostFn = createServerFn({ method: 'POST' })
 
       try {
         await db.insert(schema.notification).values({
-          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId,
+          userId: post.author_id, actorId: null, type: 'moderation', entityId: postId, postId,
           message: 'Your resubmitted post was approved and is live again.',
         })
       } catch (notifyError) {

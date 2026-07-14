@@ -95,6 +95,10 @@ export const relations = defineRelations(schema, (r) => ({
     post: r.one.post({ from: r.postToMedia.post_id, to: r.post.postId }),
     media: r.one.media({ from: r.postToMedia.media_id, to: r.media.media_id }),
   },
+  postLike: {
+    user: r.one.user({ from: r.postLike.userId, to: r.user.userId }),
+    post: r.one.post({ from: r.postLike.postId, to: r.post.postId }),
+  },
 
   // ── comment ─────────────────────────────────────────────────
   comment: {

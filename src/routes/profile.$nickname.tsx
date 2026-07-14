@@ -12,7 +12,8 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/Button'
 import { clientEnv } from '@/lib/env/client-env'
-import { BadgeCheck, User } from 'lucide-react'
+import { User } from 'lucide-react'
+import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 
 export const Route = createFileRoute('/profile/$nickname')({
   loader: async ({ context, params }) => {
@@ -101,7 +102,7 @@ function ProfilePage() {
                   <h1 className="text-2xl sm:text-3xl font-black text-text flex items-center gap-2 truncate max-w-full">
                     {user.name}
                     {user.profile?.isVerified && (
-                      <BadgeCheck className="w-6 h-6 text-brand shrink-0" />
+                      <VerifiedBadge className="w-6 h-6 shrink-0" />
                     )}
                   </h1>
                   <p className="text-[15px] font-medium text-text-s mt-1">@{user.nickname}</p>

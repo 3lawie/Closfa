@@ -6,6 +6,7 @@
 export function formatRelativeTime(date: Date | string | null | undefined): string {
   if (!date) return ''
   const d = typeof date === 'string' ? new Date(date) : date
+  if (Number.isNaN(d.getTime())) return ''
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const diffSec = Math.floor(diffMs / 1000)
@@ -30,6 +31,17 @@ export function formatCount(n: number | null | undefined): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toString()
+}
+
+/** "3d 4h" style countdown to a future date — used for a post's scheduled hard-delete. */
+export function formatTimeRemaining(target: Date | string): string {
+  const d = typeof target === 'string' ? new Date(target) : target
+  const ms = d.getTime() - Date.now()
+  if (ms <= 0) return 'soon'
+  const hours = Math.floor(ms / (1000 * 60 * 60))
+  if (hours < 1) return 'less than 1h'
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
 }
 
 /** Format a date as a human-readable string: "Jan 15, 2025" */

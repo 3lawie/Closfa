@@ -57,6 +57,10 @@ export interface StoredMedia {
         originalMedia: StoredMediaDetails
         editParams?: MediaEditParams
     }
+    // Video-only: filled in asynchronously by the background thumbnail
+    // worker (see src/lib/media/videoThumbnail.ts) — absent until that
+    // completes, and never present at all for image/audio entries.
+    thumbnailBlob?: Blob
 }
 
 /** Save a media file + its metadata to IndexedDB */
@@ -92,6 +96,23 @@ export async function updateMediaMetadata(mediaId: string, metadata: StoredMedia
         getReq.onsuccess = () => {
             const record = getReq.result as StoredMedia | undefined
             if (record) store.put({ ...record, metadata })
+        }
+        getReq.onerror = () => reject(getReq.error)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+/** Patch in a generated thumbnail blob once the background worker finishes — leaves everything else untouched. */
+export async function updateMediaThumbnail(mediaId: string, thumbnailBlob: Blob): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite")
+        const store = tx.objectStore(STORE_NAME)
+        const getReq = store.get(mediaId)
+        getReq.onsuccess = () => {
+            const record = getReq.result as StoredMedia | undefined
+            if (record) store.put({ ...record, thumbnailBlob })
         }
         getReq.onerror = () => reject(getReq.error)
         tx.oncomplete = () => resolve()

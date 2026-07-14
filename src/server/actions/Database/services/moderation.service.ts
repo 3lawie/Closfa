@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { schema, profileRoleEnum } from '@/server/db/schema'
 import { getProfilePermission, ROLE_LEVELS, getGlobalPermission } from '../verifiers/permissions'
 import { ok, err, type ServerResult } from '@/server/lib/result'
@@ -195,12 +195,15 @@ export const reportContent = createServerFn({ method: 'POST' })
       // Failure here must not fail the report itself.
       try {
         let authorId: string | null = null
+        let postId: string | null = null
         if (reportData.targetType === 'post') {
           const [row] = await db.select({ author_id: schema.post.author_id }).from(schema.post).where(eq(schema.post.postId, reportData.targetId)).limit(1)
           authorId = row?.author_id ?? null
+          postId = reportData.targetId
         } else if (reportData.targetType === 'comment') {
-          const [row] = await db.select({ userId: schema.comment.userId }).from(schema.comment).where(eq(schema.comment.comment_id, reportData.targetId)).limit(1)
+          const [row] = await db.select({ userId: schema.comment.userId, postId: schema.comment.postId }).from(schema.comment).where(eq(schema.comment.comment_id, reportData.targetId)).limit(1)
           authorId = row?.userId ?? null
+          postId = row?.postId ?? null
         } else {
           authorId = reportData.targetId
         }
@@ -211,6 +214,7 @@ export const reportContent = createServerFn({ method: 'POST' })
             actorId: null,
             type: 'moderation',
             entityId: reportData.targetId,
+            postId,
             message: `Your ${reportData.targetType} was reported and is being reviewed.`,
           })
         }
@@ -225,9 +229,44 @@ export const reportContent = createServerFn({ method: 'POST' })
     }
   })
 
+type PendingReport = Awaited<ReturnType<typeof queries.report.getPending>>[number] & { preview: string | null }
+
+/** Truncated content preview per report target — moderators shouldn't have to guess what a report is about from a truncated id. */
+async function attachReportPreviews(reports: Awaited<ReturnType<typeof queries.report.getPending>>): Promise<PendingReport[]> {
+  const postIds = reports.filter((r) => r.targetType === 'post').map((r) => r.targetId)
+  const commentIds = reports.filter((r) => r.targetType === 'comment').map((r) => r.targetId)
+  const userIds = reports.filter((r) => r.targetType === 'user').map((r) => r.targetId)
+
+  const [posts, comments, users] = await Promise.all([
+    postIds.length > 0
+      ? db.select({ id: schema.post.postId, content: schema.post.content }).from(schema.post).where(inArray(schema.post.postId, postIds))
+      : Promise.resolve([]),
+    commentIds.length > 0
+      ? db.select({ id: schema.comment.comment_id, content: schema.comment.comment }).from(schema.comment).where(inArray(schema.comment.comment_id, commentIds))
+      : Promise.resolve([]),
+    userIds.length > 0
+      ? db.select({ id: schema.user.userId, name: schema.user.name, nickname: schema.user.nickname }).from(schema.user).where(inArray(schema.user.userId, userIds))
+      : Promise.resolve([]),
+  ])
+
+  const truncate = (s: string | null) => (s ? (s.length > 140 ? `${s.slice(0, 140)}…` : s) : null)
+  const postPreview = new Map(posts.map((p) => [p.id, truncate(p.content)]))
+  const commentPreview = new Map(comments.map((c) => [c.id, truncate(c.content)]))
+  const userPreview = new Map(users.map((u) => [u.id, `${u.name}${u.nickname ? ` (@${u.nickname})` : ''}`]))
+
+  return reports.map((r) => ({
+    ...r,
+    preview:
+      r.targetType === 'post' ? (postPreview.get(r.targetId) ?? null) :
+      r.targetType === 'comment' ? (commentPreview.get(r.targetId) ?? null) :
+      r.targetType === 'user' ? (userPreview.get(r.targetId) ?? null) :
+      null,
+  }))
+}
+
 export const getPendingReportsFn = createServerFn({ method: 'GET' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
-  .handler(async ({ context }): Promise<ServerResult<Awaited<ReturnType<typeof queries.report.getPending>>>> => {
+  .handler(async ({ context }): Promise<ServerResult<PendingReport[]>> => {
     const { userId } = context.session
 
     const perm = await getGlobalPermission(userId)
@@ -236,7 +275,7 @@ export const getPendingReportsFn = createServerFn({ method: 'GET' })
     }
 
     const reports = await queries.report.getPending()
-    return ok(reports)
+    return ok(await attachReportPreviews(reports))
   })
 
 const resolveReportInput = z.object({

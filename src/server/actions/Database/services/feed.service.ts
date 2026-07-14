@@ -58,3 +58,14 @@ export const getFollowingFeedFn = createServerFn({ method: 'GET' })
 
     return { posts: posts as unknown as FeedPage['posts'], nextCursor, previousCursor: previousCursor ?? undefined }
   })
+
+const searchInput = z.object({ query: z.string().min(1).max(200) })
+
+/** Full-text search over post content + extracted keywords. Public: guests and users alike, same reach as the feed itself. */
+export const searchPostsFn = createServerFn({ method: 'GET' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(searchInput)
+  .handler(async ({ data }): Promise<FeedPage['posts']> => {
+    const posts = await queries.post.search(data.query)
+    return posts as unknown as FeedPage['posts']
+  })

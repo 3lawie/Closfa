@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -21,11 +22,18 @@ import { Route as AuthenticatedMyPostsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedModeratorRouteImport } from './routes/_authenticated/moderator'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
+import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard.index'
 import { Route as ApiAuthMockLoginRouteImport } from './routes/api/auth/mock-login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as AuthenticatedDashboardPostsRouteImport } from './routes/_authenticated/dashboard.posts'
 
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
@@ -86,6 +94,12 @@ const AuthenticatedCreateRoute = AuthenticatedCreateRouteImport.update({
   path: '/create',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedDashboardIndexRoute =
+  AuthenticatedDashboardIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const ApiAuthMockLoginRoute = ApiAuthMockLoginRouteImport.update({
   id: '/api/auth/mock-login',
   path: '/api/auth/mock-login',
@@ -106,12 +120,19 @@ const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
   path: '/api/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDashboardPostsRoute =
+  AuthenticatedDashboardPostsRouteImport.update({
+    id: '/posts',
+    path: '/posts',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
+  '/search': typeof SearchRoute
   '/create': typeof AuthenticatedCreateRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/moderator': typeof AuthenticatedModeratorRoute
   '/my-posts': typeof AuthenticatedMyPostsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
@@ -119,16 +140,18 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
+  '/dashboard/posts': typeof AuthenticatedDashboardPostsRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
+  '/dashboard/': typeof AuthenticatedDashboardIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
+  '/search': typeof SearchRoute
   '/create': typeof AuthenticatedCreateRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
   '/moderator': typeof AuthenticatedModeratorRoute
   '/my-posts': typeof AuthenticatedMyPostsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
@@ -136,18 +159,21 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
+  '/dashboard/posts': typeof AuthenticatedDashboardPostsRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
+  '/dashboard': typeof AuthenticatedDashboardIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/onboarding': typeof OnboardingRoute
+  '/search': typeof SearchRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
-  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/_authenticated/moderator': typeof AuthenticatedModeratorRoute
   '/_authenticated/my-posts': typeof AuthenticatedMyPostsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
@@ -155,16 +181,19 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/post/$postId': typeof PostPostIdRoute
   '/profile/$nickname': typeof ProfileNicknameRoute
+  '/_authenticated/dashboard/posts': typeof AuthenticatedDashboardPostsRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/mock-login': typeof ApiAuthMockLoginRoute
+  '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/onboarding'
+    | '/search'
     | '/create'
     | '/dashboard'
     | '/moderator'
@@ -174,16 +203,18 @@ export interface FileRouteTypes {
     | '/settings'
     | '/post/$postId'
     | '/profile/$nickname'
+    | '/dashboard/posts'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/mock-login'
+    | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/onboarding'
+    | '/search'
     | '/create'
-    | '/dashboard'
     | '/moderator'
     | '/my-posts'
     | '/notifications'
@@ -191,15 +222,18 @@ export interface FileRouteTypes {
     | '/settings'
     | '/post/$postId'
     | '/profile/$nickname'
+    | '/dashboard/posts'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/mock-login'
+    | '/dashboard'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/onboarding'
+    | '/search'
     | '/_authenticated/create'
     | '/_authenticated/dashboard'
     | '/_authenticated/moderator'
@@ -209,16 +243,19 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/post/$postId'
     | '/profile/$nickname'
+    | '/_authenticated/dashboard/posts'
     | '/api/auth/callback'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/mock-login'
+    | '/_authenticated/dashboard/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
+  SearchRoute: typeof SearchRoute
   PostPostIdRoute: typeof PostPostIdRoute
   ProfileNicknameRoute: typeof ProfileNicknameRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
@@ -229,6 +266,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboarding': {
       id: '/onboarding'
       path: '/onboarding'
@@ -313,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCreateRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/dashboard/': {
+      id: '/_authenticated/dashboard/'
+      path: '/'
+      fullPath: '/dashboard/'
+      preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
     '/api/auth/mock-login': {
       id: '/api/auth/mock-login'
       path: '/api/auth/mock-login'
@@ -341,12 +392,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/dashboard/posts': {
+      id: '/_authenticated/dashboard/posts'
+      path: '/posts'
+      fullPath: '/dashboard/posts'
+      preLoaderRoute: typeof AuthenticatedDashboardPostsRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
   }
 }
 
+interface AuthenticatedDashboardRouteChildren {
+  AuthenticatedDashboardPostsRoute: typeof AuthenticatedDashboardPostsRoute
+  AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
+}
+
+const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
+  {
+    AuthenticatedDashboardPostsRoute: AuthenticatedDashboardPostsRoute,
+    AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
+  }
+
+const AuthenticatedDashboardRouteWithChildren =
+  AuthenticatedDashboardRoute._addFileChildren(
+    AuthenticatedDashboardRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRouteWithChildren
   AuthenticatedModeratorRoute: typeof AuthenticatedModeratorRoute
   AuthenticatedMyPostsRoute: typeof AuthenticatedMyPostsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
@@ -356,7 +430,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRouteWithChildren,
   AuthenticatedModeratorRoute: AuthenticatedModeratorRoute,
   AuthenticatedMyPostsRoute: AuthenticatedMyPostsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
@@ -372,6 +446,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
+  SearchRoute: SearchRoute,
   PostPostIdRoute: PostPostIdRoute,
   ProfileNicknameRoute: ProfileNicknameRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,

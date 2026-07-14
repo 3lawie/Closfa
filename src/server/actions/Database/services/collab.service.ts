@@ -64,7 +64,7 @@ export const respondToCollabInviteFn = createServerFn({ method: 'POST' })
       if (post) {
         try {
           await db.insert(schema.notification).values({
-            userId: post.author_id, actorId: userId, type: 'collab_invite', entityId: postId,
+            userId: post.author_id, actorId: userId, type: 'collab_invite', entityId: postId, postId,
             message: accept ? 'Accepted your collab invite.' : 'Declined your collab invite.',
           })
         } catch (notifyError) {

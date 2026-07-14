@@ -7,7 +7,7 @@ import { Link, getRouteApi, useRouter } from '@tanstack/react-router'
 const rootRouteApi = getRouteApi('__root__')
 import { Button } from '@/components/ui/Button'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toggleLike } from '@/server/actions/Database/services/like.service'
+import { toggleLike, getPostLikersFn } from '@/server/actions/Database/services/like.service'
 import { deletePost, incrementShareFn } from '@/server/actions/Database/services/post.service'
 import { reportContent } from '@/server/actions/Database/services/moderation.service'
 import { toggleSavePostFn } from '@/server/actions/Database/services/savedPost.service'
@@ -15,20 +15,21 @@ import { blockUserFn } from '@/server/actions/Database/services/block.service'
 import { assignGlobalModeratorFn, getMyGlobalPermissionFn } from '@/server/actions/Database/services/role.service'
 import { pinPostFn, unpinPostFn, getMyProfilePermissionFn } from '@/server/actions/Database/services/moderation.service'
 import { cn } from '@/lib/utils/cn'
-import { formatRelativeTime, formatCount } from '@/lib/utils/format'
+import { formatRelativeTime, formatCount, formatDuration } from '@/lib/utils/format'
 import { clientEnv } from '@/lib/env/client-env'
 import type { Post, Media, PostAuthor } from '@/lib/entities/Post'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { ImageLightbox } from '@/components/media/ImageLightbox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
+import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { toast } from '@/components/ui/Toast'
 import {
   Heart,
   MessageCircle,
   Share2,
   Eye,
-  BadgeCheck,
   Trash2,
   Flag,
   Bookmark,
@@ -46,13 +47,6 @@ import {
   Pin,
   PinOff,
 } from 'lucide-react'
-
-function formatMediaTime(t: number) {
-  if (!Number.isFinite(t) || t < 0) return '0:00'
-  const m = Math.floor(t / 60)
-  const s = Math.floor(t % 60).toString().padStart(2, '0')
-  return `${m}:${s}`
-}
 
 // ── Avatar ────────────────────────────────────────────────────
 function Avatar({ author }: { author: PostAuthor }) {
@@ -90,13 +84,17 @@ export interface MediaSlideHandle {
 // Native <video> with the browser chrome stripped (no `controls`) and a
 // custom bar in the app's own palette — a video in the feed should feel
 // like part of the post, not an embedded player from somewhere else.
-const VideoSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean }>(function VideoSlide({ src, isActive }, ref) {
+const VideoSlide = forwardRef<MediaSlideHandle, { src: string; poster?: string; isActive: boolean }>(function VideoSlide({ src, poster, isActive }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [muted, setMuted] = useState(false)
+  // Starts muted so the autoplay-on-switch below is actually allowed to run —
+  // browsers block autoplay-with-sound outside a user gesture, but always
+  // allow a muted autoplay. The existing mute button still lets the viewer
+  // turn sound on for whichever slide is currently active.
+  const [muted, setMuted] = useState(true)
   // While the user is actively dragging/pressing the seek bar, the displayed
   // position must come from the input itself, not from onTimeUpdate — video
   // playback fires timeupdate many times a second, and with the range's
@@ -105,10 +103,28 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
   const [seeking, setSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState(0)
 
-  // Only the slide currently in view should ever be making sound/playing —
-  // scrolling to the next slide pauses whatever was playing on this one.
+  // Switching to this slide plays it; switching away pauses it — matches
+  // the feed's "one thing playing at a time" model.
+  //
+  // playPromiseRef exists to dodge a real, well-known browser gotcha: calling
+  // .pause() while a .play() promise from a moment ago hasn't resolved yet
+  // throws "play() request was interrupted by a call to pause()" — and on
+  // some browsers that leaves the element in a state where the *next*
+  // .play() call silently no-ops, which read exactly like "the video just
+  // never starts, seek bar frozen at 0". Waiting for any in-flight play()
+  // to settle before pausing avoids the race instead of just swallowing
+  // its symptom.
+  const playPromiseRef = useRef<Promise<void> | null>(null)
   useEffect(() => {
-    if (!isActive) videoRef.current?.pause()
+    const v = videoRef.current
+    if (!v) return
+    if (isActive) {
+      const p = v.play()
+      playPromiseRef.current = p ?? null
+      p?.catch(() => {})
+    } else {
+      Promise.resolve(playPromiseRef.current).catch(() => {}).finally(() => v.pause())
+    }
   }, [isActive])
 
   function togglePlay() {
@@ -137,6 +153,7 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
       <video
         ref={videoRef}
         src={src}
+        poster={poster}
         className="w-full h-full object-cover"
         preload="metadata"
         playsInline
@@ -174,7 +191,7 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
           aria-label="Seek"
         />
         <span className="text-[11px] text-white/90 font-mono tabular-nums shrink-0">
-          {formatMediaTime(seeking ? seekValue : currentTime)} / {formatMediaTime(duration)}
+          {formatDuration(seeking ? seekValue : currentTime)} / {formatDuration(duration)}
         </span>
         <button onClick={(e) => { e.stopPropagation(); setMuted((m) => !m) }} className="text-white shrink-0" aria-label={muted ? 'Unmute' : 'Mute'}>
           {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -192,11 +209,22 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
 })
 
 // ── Themed audio slide ───────────────────────────────────────────
-// No native waveform to lean on, so the slide itself becomes the "cover" —
-// a calm accent-tinted card with the same play/seek language as the video
-// slide, rather than a bare browser audio bar dropped into a square frame.
+// Design intent: a calm listening moment where the accent visibly breathes
+// with the sound — a real AnalyserNode-driven equalizer reacting to actual
+// playback amplitude, not a decorative loop — rather than a bare browser
+// audio bar dropped into a square frame.
+const AUDIO_VISUALIZER_BARS = 28
+
 const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean }>(function AudioSlide({ src, isActive }, ref) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // The Web Audio graph (context/source/analyser) is created once per
+  // mounted <audio> element and never rebuilt — calling
+  // createMediaElementSource twice on the same element throws, so
+  // `sourceRef` doubles as the "already wired up" guard.
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -204,14 +232,70 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
   // position from onTimeUpdate while the user is actively pressing/dragging.
   const [seeking, setSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState(0)
+  const prefersReducedMotion = useReducedMotion()
+  // Persistent per-bar envelope-follower state (not just a fresh array each
+  // frame) — each bar gets its own randomized attack/release rate and phase
+  // so, even reacting to the same real analyser data, adjacent bars don't
+  // rise and fall in lockstep like a single pulsing block.
+  const barStatesRef = useRef<{ value: number; attack: number; release: number; phase: number }[] | null>(null)
+  function getBarStates() {
+    if (!barStatesRef.current) {
+      barStatesRef.current = Array.from({ length: AUDIO_VISUALIZER_BARS }, () => ({
+        value: 0,
+        attack: 0.32 + Math.random() * 0.18,
+        release: 0.08 + Math.random() * 0.06,
+        phase: Math.random() * Math.PI * 2,
+      }))
+    }
+    return barStatesRef.current
+  }
 
+  // Deliberately no autoplay-on-switch here, unlike VideoSlide: audio has no
+  // silent/muted middle ground the way a muted video does — playing sound
+  // the instant a slide scrolls into view (no click, no warning) is exactly
+  // the surprise-noise pattern feed UX conventions avoid. Switching away
+  // still pauses it, matching the "one thing playing at a time" model.
   useEffect(() => {
     if (!isActive) audioRef.current?.pause()
   }, [isActive])
 
+  // Built lazily on the first play — AudioContext starts (or browsers force
+  // it to start) "suspended" outside a user gesture, and togglePlay is
+  // always reached via a click/keypress, so this is a safe place to both
+  // create and resume it.
+  function ensureAudioGraph() {
+    const a = audioRef.current
+    if (!a || sourceRef.current) return
+    const ctx = new AudioContext()
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 128
+    analyser.smoothingTimeConstant = 0.75
+    const source = ctx.createMediaElementSource(a)
+    // The analyser only taps the signal — it must still be routed to the
+    // destination itself, otherwise inserting it silences playback.
+    source.connect(analyser)
+    analyser.connect(ctx.destination)
+    audioCtxRef.current = ctx
+    analyserRef.current = analyser
+    sourceRef.current = source
+  }
+
+  // Release the audio graph when this slide unmounts (e.g. scrolled out of
+  // an unmounted post) — an AudioContext left open keeps its audio thread
+  // alive for no reason otherwise.
+  useEffect(() => {
+    return () => {
+      sourceRef.current?.disconnect()
+      analyserRef.current?.disconnect()
+      audioCtxRef.current?.close().catch(() => {})
+    }
+  }, [])
+
   function togglePlay() {
     const a = audioRef.current
     if (!a) return
+    ensureAudioGraph()
+    audioCtxRef.current?.resume()
     if (a.paused) a.play()
     else a.pause()
   }
@@ -230,25 +314,166 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
     },
   }), [duration])
 
+  // Draws real amplitude bars from the analyser while playing; a calm flat
+  // baseline otherwise (or when the visitor has asked for reduced motion —
+  // this loop is genuinely reactive to the audio, not decorative, but a
+  // constantly-animating equalizer is still motion some visitors opt out of).
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx2d = canvas?.getContext('2d')
+    if (!canvas || !ctx2d) return
+
+    const dpr = window.devicePixelRatio || 1
+    // Resolved once per run (playing/theme rarely flips mid-frame) rather
+    // than every animation frame, to avoid a getComputedStyle call 60x/sec.
+    const barColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || 'currentColor'
+
+    function drawBars(levels: number[]) {
+      const { width: cssWidth, height: cssHeight } = canvas!.getBoundingClientRect()
+      const width = Math.max(1, Math.round(cssWidth * dpr))
+      const height = Math.max(1, Math.round(cssHeight * dpr))
+      if (canvas!.width !== width) canvas!.width = width
+      if (canvas!.height !== height) canvas!.height = height
+
+      ctx2d!.clearRect(0, 0, width, height)
+      ctx2d!.fillStyle = barColor
+      const barWidth = width / AUDIO_VISUALIZER_BARS
+      const gap = barWidth * 0.35
+      const w = barWidth - gap
+      const radius = Math.min(w / 2, 3 * dpr)
+      levels.forEach((level, i) => {
+        const barHeight = Math.max(height * 0.08, level * height)
+        const x = i * barWidth + gap / 2
+        const y = (height - barHeight) / 2
+        ctx2d!.beginPath()
+        ctx2d!.roundRect(x, y, w, barHeight, radius)
+        ctx2d!.fill()
+      })
+    }
+
+    if (!playing || prefersReducedMotion || !analyserRef.current) {
+      drawBars(new Array(AUDIO_VISUALIZER_BARS).fill(0))
+      return
+    }
+
+    const analyser = analyserRef.current
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    // Sampling is biased toward the lower ~70% of bins — that's where music's
+    // perceptible energy actually lives, the top of the spectrum reads as
+    // near-silent noise and left the bars on the right looking permanently dead.
+    const usableBins = Math.floor(analyser.frequencyBinCount * 0.7)
+    const barStates = getBarStates()
+    let lastFrameTime = performance.now()
+
+    let rafId: number
+    function loop(now: number) {
+      rafId = requestAnimationFrame(loop)
+      const dt = Math.min(0.05, (now - lastFrameTime) / 1000)
+      lastFrameTime = now
+      analyser.getByteFrequencyData(data)
+      const levels = barStates.map((bar, i) => {
+        const bin = Math.floor((i / AUDIO_VISUALIZER_BARS) * usableBins)
+        const target = data[bin] / 255
+        // VU-meter physics: each bar rises fast toward a transient but falls
+        // back slower — that asymmetry, plus this bar's own randomized rate,
+        // is what makes the row read as alive instead of one pulsing block.
+        const rate = target > bar.value ? bar.attack : bar.release
+        bar.value += (target - bar.value) * Math.min(1, rate * (dt * 60))
+        const wobble = 0.025 * Math.sin(now / 280 + bar.phase)
+        return Math.max(0, Math.min(1, bar.value + wobble))
+      })
+      drawBars(levels)
+    }
+    loop(performance.now())
+    return () => cancelAnimationFrame(rafId)
+  }, [playing, prefersReducedMotion])
+
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center gap-6 bg-accent-bg px-10">
+    <div className="relative w-full h-full flex flex-col bg-accent-bg">
       <audio
         ref={audioRef}
         src={src}
+        // Required once createMediaElementSource() reroutes this element's
+        // output through the Web Audio graph: the media is cross-origin
+        // (ImageKit CDN), and without this attribute Chrome treats the
+        // graph as tainted and silently mutes playback entirely instead of
+        // just blocking analyser readback — this is what made audio posts
+        // go silent the moment the visualizer was wired in.
+        crossOrigin="anonymous"
         preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        // Some MP3s (VBR-encoded ones especially) report duration as NaN or
+        // Infinity right at loadedmetadata and only resolve the real value
+        // afterward once the browser has buffered enough to calculate it —
+        // durationchange fires again when that happens, which is what was
+        // missing before (loadedmetadata alone left duration stuck at 0:00).
+        onLoadedMetadata={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration) }}
+        onDurationChange={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration) }}
       />
-      <button
-        onClick={togglePlay}
-        className="w-16 h-16 rounded-full bg-surface shadow-md border border-border flex items-center justify-center text-accent transition-transform duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:scale-105"
-        aria-label={playing ? 'Pause' : 'Play'}
-      >
-        {playing ? <Pause className="w-6 h-6" fill="currentColor" /> : <Play className="w-6 h-6 ml-0.5" fill="currentColor" />}
-      </button>
-      <div className="w-full flex items-center gap-2.5">
+
+      {/* Primary zone: there's no photo/video frame to look at here, so the
+          equalizer itself is the content — filling the card, with the play
+          button as the one clear primary action elevated above it. The
+          transport strip below is deliberately a separate, lower-emphasis
+          tier rather than another block stacked in the same centered column
+          (Refactoring UI's core lesson: hierarchy comes from real
+          size/weight/placement differences, not uniform centered stacking). */}
+      <div className="relative flex-1 min-h-0 flex items-center justify-center px-8">
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" aria-hidden="true" />
+        <div className="relative flex items-center justify-center">
+          {/* Pulsing ring — only while actually playing (bounded, not an
+              infinite decorative loop), same pattern as AccountRail's unread
+              notification indicator. Skipped under reduced motion. */}
+          {playing && !prefersReducedMotion && (
+            <motion.span
+              className="absolute inset-0 rounded-full bg-accent"
+              animate={{ scale: [1, 1.35, 1], opacity: [0.35, 0, 0.35] }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          )}
+          <button
+            onClick={togglePlay}
+            className="relative w-16 h-16 rounded-full bg-surface shadow-md border border-border flex items-center justify-center text-accent transition-transform duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:scale-105"
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {/* Crossfade instead of an instant icon swap — a real transition
+                between the two states rather than a hard cut. */}
+            <AnimatePresence mode="wait" initial={false}>
+              {playing ? (
+                <motion.span
+                  key="pause"
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex"
+                >
+                  <Pause className="w-6 h-6" fill="currentColor" />
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="play"
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex"
+                >
+                  <Play className="w-6 h-6 ml-0.5" fill="currentColor" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+        </div>
+      </div>
+
+      {/* Secondary zone: the transport strip, permanently docked to the
+          bottom of the card in normal flow — always visible, never fading,
+          visually subdued (translucent surface tint + a top hairline)
+          relative to the primary content above it. */}
+      <div className="shrink-0 flex items-center gap-3 px-4 py-3 bg-surface/50 backdrop-blur-sm border-t border-accent-border">
         <input
           type="range"
           min={0}
@@ -258,11 +483,11 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
           onPointerDown={() => { setSeeking(true); setSeekValue(currentTime) }}
           onPointerUp={() => setSeeking(false)}
           style={{ accentColor: 'var(--brand)' }}
-          className="flex-1 h-1 cursor-pointer"
+          className="flex-1 h-1.5 cursor-pointer"
           aria-label="Seek"
         />
         <span className="text-[11px] text-text-s font-mono tabular-nums shrink-0">
-          {formatMediaTime(seeking ? seekValue : currentTime)} / {formatMediaTime(duration)}
+          {formatDuration(seeking ? seekValue : currentTime)} / {formatDuration(duration)}
         </span>
       </div>
     </div>
@@ -387,6 +612,7 @@ const MediaGrid = forwardRef<MediaGridHandle, { media: Media[], mediaQuality?: '
               <VideoSlide
                 ref={(handle) => { slideRefs.current[i] = handle }}
                 src={`${IK}/${m.mediaUrl}`}
+                poster={m.thumbnailUrl ? `${IK}/tr:w-800,c-at_max,f-avif/${m.thumbnailUrl}` : undefined}
                 isActive={i === index}
               />
             )}
@@ -552,6 +778,14 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
     if (likeMutation.isPending) return
     likeMutation.mutate()
   }
+
+  const [showLikersModal, setShowLikersModal] = useState(false)
+  const likersQuery = useQuery({
+    queryKey: ['postLikers', post.postId],
+    queryFn: () => getPostLikersFn({ data: { postId: post.postId } }),
+    enabled: showLikersModal,
+  })
+  const likers = likersQuery.data?.ok ? likersQuery.data.data : []
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
@@ -771,7 +1005,7 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
             <Link to="/profile/$nickname" params={{ nickname: author?.nickname || '' }} className="font-bold text-text-h hover:underline decoration-border underline-offset-4 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)] truncate">
               {author?.name ?? 'Unknown'}
             </Link>
-            {author?.profile?.isVerified && <BadgeCheck className="w-3.5 h-3.5 text-brand shrink-0" />}
+            {author?.profile?.isVerified && <VerifiedBadge className="w-3.5 h-3.5 shrink-0" />}
             <span className="text-text-s">@{author?.nickname}</span>
             <span className="text-text-s">·</span>
             <span className="text-text-s hover:underline cursor-pointer transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]">{formatRelativeTime(post.publishedAt)}</span>
@@ -918,18 +1152,27 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
 
       {/* Actions */}
       <div className="flex items-center gap-5 mt-2.5 pt-2.5 border-t border-border">
-        <button
-          onClick={handleLike}
-          className={cn(
-            "group flex items-center gap-2 text-sm font-semibold transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
-            liked ? "text-brand" : "text-text-s hover:text-brand"
+        <div className="flex items-center">
+          <button
+            onClick={handleLike}
+            className={cn(
+              "group flex items-center gap-2 text-sm font-semibold transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
+              liked ? "text-brand" : "text-text-s hover:text-brand"
+            )}
+          >
+            <div className={cn("p-1.5 rounded-full transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]", liked ? "bg-accent-bg" : "group-hover:bg-accent-bg")}>
+              <Heart className="w-4 h-4 transition-transform group-hover:scale-110" fill={liked ? 'currentColor' : 'none'} />
+            </div>
+          </button>
+          {!hideEngagementCounts && localLikes > 0 && (
+            <button
+              onClick={() => setShowLikersModal(true)}
+              className="text-sm font-semibold text-text-s hover:text-brand hover:underline transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+            >
+              {formatCount(localLikes)}
+            </button>
           )}
-        >
-          <div className={cn("p-1.5 rounded-full transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]", liked ? "bg-accent-bg" : "group-hover:bg-accent-bg")}>
-            <Heart className="w-4 h-4 transition-transform group-hover:scale-110" fill={liked ? 'currentColor' : 'none'} />
-          </div>
-          {!hideEngagementCounts && <span>{formatCount(localLikes)}</span>}
-        </button>
+        </div>
 
         <rootRouteApi.Link
           search={(prev) => ({ ...prev, post: post.postId })}
@@ -1041,6 +1284,30 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
         description="The post and all its comments will be removed — you'll have a few seconds to undo right after."
         confirmLabel="Delete post"
       />
+
+      <Modal isOpen={showLikersModal} onClose={() => setShowLikersModal(false)} title="Liked by">
+        {likersQuery.isLoading ? (
+          <p className="text-sm text-text-s">Loading…</p>
+        ) : likers.length === 0 ? (
+          <p className="text-sm text-text-s">No likes yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {likers.map((u) => (
+              <li key={u.userId}>
+                <Link
+                  to="/profile/$nickname"
+                  params={{ nickname: u.nickname ?? '' }}
+                  onClick={() => setShowLikersModal(false)}
+                  className="flex items-center gap-2 p-2 -mx-2 rounded-md text-text hover:bg-surface-translucent transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                >
+                  <span className="font-semibold">{u.name}</span>
+                  <span className="text-text-s">@{u.nickname}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Modal>
     </motion.article>
   )
 }

@@ -11,6 +11,7 @@
 // broken beta type definitions, while keeping correct runtime values.
 // ──────────────────────────────────────────────────────────────
 
+import { sql } from 'drizzle-orm'
 import { db } from './db'
 import type { Post as PostShape } from '@/lib/entities/Post'
 import { safeDisplayName } from '@/lib/utils/format'
@@ -94,6 +95,7 @@ type NotificationWithActor = {
   actorId: string | null
   type: string
   entityId: string | null
+  postId: string | null
   message: string | null
   read: boolean
   createdAt: Date | null
@@ -105,6 +107,7 @@ type AdminPost = {
   post_status: string
   author_id: string
   moderationReason: string | null
+  scheduledPurgeAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null
   primaryAuthor: { userId: string; name: string; nickname: string | null; profile: ProfileWithAvatar | null } | null
@@ -114,6 +117,7 @@ type OwnPost = {
   content: string | null
   post_status: string
   moderationReason: string | null
+  scheduledPurgeAt: Date | null
   likes: number
   comments: number
   shares: number
@@ -121,7 +125,7 @@ type OwnPost = {
   createdAt: Date | null
   updatedAt: Date | null
   published_at: Date | null
-  media: { media_id: string; mediaUrl: string; media_type: string }[]
+  media: { media_id: string; mediaUrl: string; media_type: string; thumbnailUrl: string | null }[]
 }
 
 // Every relational fetch that joins a `user` row for display to OTHER users
@@ -345,11 +349,11 @@ export const queries = {
         orderBy: { updatedAt: 'desc' },
         limit,
         columns: {
-          postId: true, content: true, post_status: true, moderationReason: true,
+          postId: true, content: true, post_status: true, moderationReason: true, scheduledPurgeAt: true,
           likes: true, comments: true, shares: true, views: true,
           createdAt: true, updatedAt: true, published_at: true,
         },
-        with: { media: { columns: { media_id: true, mediaUrl: true, media_type: true } } },
+        with: { media: { columns: { media_id: true, mediaUrl: true, media_type: true, thumbnailUrl: true } } },
       }) as unknown as Promise<OwnPost[]>,
 
     // Lightweight: just enough to count a user's posts (dashboard stats) —
@@ -359,6 +363,30 @@ export const queries = {
         where: w({ author_id: authorId }),
         columns: { postId: true },
       }),
+
+    // Full-text search — content + AI/RAKE-extracted keywords (populated in
+    // the background after publish, see postEnrichment.ts). Calls the same
+    // closfa_post_tsvector() wrapper function schema.ts's postSearchIndex
+    // indexes — using a bare to_tsvector(...) call here instead would still
+    // work, but Postgres wouldn't recognize it as the same expression the
+    // GIN index was built on, and would silently fall back to a full scan.
+    // `RAW` is this file's existing escape hatch (see keywordExclusionRaw
+    // above) for conditions the relational filter DSL's named operators
+    // can't express — full-text match/rank need raw SQL functions, not
+    // just comparison operators.
+    search: async (searchQuery: string, limit = 20) => {
+      const tsvectorExpr = sql`closfa_post_tsvector(post.content, post.keywords)`
+      const posts = await db.query.post.findMany({
+        where: w({
+          is_published: true,
+          RAW: () => sql`${tsvectorExpr} @@ plainto_tsquery('english', ${searchQuery})`,
+        }),
+        orderBy: () => [sql`ts_rank(${tsvectorExpr}, plainto_tsquery('english', ${searchQuery})) DESC`],
+        limit,
+        with: WITH_FEED_AUTHOR,
+      })
+      return sanitizeAuthorNames(posts)
+    },
 
     // Dashboard "this week" reflection — neutral counts framed as a
     // reflection, not an engagement scoreboard: posts shared, likes given,
@@ -395,6 +423,16 @@ export const queries = {
         likesReceived: likesReceived.length,
       }
     },
+
+    // Short "Liked by" list for a post's like count — mirrors the join shape
+    // profile.getModerators already uses (postLike joined to public columns).
+    getLikers: (postId: string, limit = 20) =>
+      db.query.postLike.findMany({
+        where: w({ postId }),
+        orderBy: { createdAt: 'desc' },
+        limit,
+        with: { user: { columns: PUBLIC_USER_COLUMNS } },
+      }),
   },
 
   // ── Comment ─────────────────────────────────────────────────

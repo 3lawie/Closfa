@@ -40,6 +40,20 @@ const fileMetadataInput = z.object({
 })
 type FileMetadataInput = z.infer<typeof fileMetadataInput>
 
+/** The token/signature themselves carry no file-specific data — ImageKit's
+ *  scheme only binds them to an expiry window, not to a particular file —
+ *  so this is safe to call once per file inside a batch (see
+ *  {@link getImageKitAuthBatch}) as well as for the single-file case below. */
+function issueAuth(privateKey: string): AuthResult {
+  const token = crypto.randomUUID()
+  const expire = Math.floor(Date.now() / 1000) + 2400 // 40 minutes
+  const signature = crypto
+    .createHmac('sha1', privateKey)
+    .update(token + expire)
+    .digest('hex')
+  return { token, expire, signature }
+}
+
 /**
  * Generate an ImageKit upload authentication signature.
  *
@@ -61,13 +75,35 @@ export const getImageKitAuth = createServerFn({ method: 'POST' })
       throw new Error('IMAGEKIT_PRIVATE_KEY is not set')
     }
 
-    const token = crypto.randomUUID()
-    const expire = Math.floor(Date.now() / 1000) + 2400 // 40 minutes
+    return issueAuth(privateKey)
+  })
 
-    const signature = crypto
-      .createHmac('sha1', privateKey)
-      .update(token + expire)
-      .digest('hex')
+/** Same as {@link getImageKitAuth}, but for every file in a post at once —
+ *  publishing N attachments previously cost N round trips to this server
+ *  just for auth tokens before any actual upload could start. Capped at 24
+ *  (12 media files + up to 12 paired video-thumbnail uploads, the same limit
+ *  `MediaContatiner.tsx` already enforces client-side). */
+const batchInput = z.object({
+  files: z.array(fileMetadataInput).min(1).max(24),
+})
 
-    return { token, expire, signature }
+export const getImageKitAuthBatch = createServerFn({ method: 'POST' })
+  .middleware([authMiddleware, rateLimiterMiddleWare])
+  .inputValidator(batchInput)
+  .handler(async ({ data }): Promise<AuthResult[]> => {
+    const privateKey = process.env.IMAGEKIT_PRIVATE_KEY
+    if (!privateKey) {
+      throw new Error('IMAGEKIT_PRIVATE_KEY is not set')
+    }
+
+    // Same all-or-nothing behavior as calling getImageKitAuth per file used
+    // to have: one bad file throws and aborts the whole batch, just from a
+    // single round trip instead of N.
+    return data.files.map((file) => {
+      const check = verifyImageKitUpload(file)
+      if (!check.ok) {
+        throw new Error(`${file.fileName}: ${check.message}`)
+      }
+      return issueAuth(privateKey)
+    })
   })
