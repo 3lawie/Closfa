@@ -95,6 +95,17 @@ export const MediaContatiner = forwardRef<MediaContainerHandle>(function MediaCo
     const [dragGeometry, setDragGeometry] = useState<DragGeometry | null>(null)
     const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null)
 
+    // ── OS file drag-and-drop ────────────────────────────────────
+    // Unrelated to the pointer-based reorder drag above — this is the native
+    // HTML5 drag-and-drop API, for dragging files in from the file explorer.
+    // A ref-based depth counter (not a boolean) because dragenter/dragleave
+    // fire on every nested element the pointer crosses while dragging over
+    // this container — without counting, the highlight would flicker off
+    // every time the pointer passed over a child (a tile, a button) inside
+    // the drop target, not just when it actually left the container itself.
+    const [isDraggingFile, setIsDraggingFile] = useState(false)
+    const fileDragDepth = useRef(0)
+
     // 1. Load saved medias from IndexedDB on mount
     useEffect(() => {
         let cancelled = false
@@ -273,6 +284,39 @@ export const MediaContatiner = forwardRef<MediaContainerHandle>(function MediaCo
         if (e.clipboardData.files) addFiles(e.clipboardData.files)
     }
 
+    // dragover must call preventDefault, or the browser's default action
+    // (usually "open this file in a new tab") fires instead of allowing a
+    // drop at all — the single easiest reason drag-and-drop silently "does
+    // nothing" if it's ever missing. Gated on dataTransfer.types including
+    // 'Files' throughout so dragging text/links elsewhere on the page never
+    // triggers the highlight or an upload attempt.
+    function handleDragEnter(e: React.DragEvent<HTMLDivElement>) {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        fileDragDepth.current += 1
+        setIsDraggingFile(true)
+    }
+
+    function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+    }
+
+    function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        fileDragDepth.current = Math.max(0, fileDragDepth.current - 1)
+        if (fileDragDepth.current === 0) setIsDraggingFile(false)
+    }
+
+    function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        fileDragDepth.current = 0
+        setIsDraggingFile(false)
+        if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files)
+    }
+
     function moveMedia(fromIndex: number, toIndex: number) {
         setMedias(prev => {
             if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || toIndex >= prev.length) return prev
@@ -367,7 +411,19 @@ export const MediaContatiner = forwardRef<MediaContainerHandle>(function MediaCo
     const draggedMedia = draggedIndex !== null ? medias[draggedIndex] : null
 
     return (
-        <div ref={contatinerRef} onPaste={handlePaste} tabIndex={0} className="outline-none">
+        <div
+            ref={contatinerRef}
+            onPaste={handlePaste}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            tabIndex={0}
+            className={cn(
+                "outline-none rounded-lg transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
+                isDraggingFile && "ring-2 ring-accent ring-dashed ring-offset-2 ring-offset-surface",
+            )}
+        >
             <div className="flex items-center justify-between mb-6">
                 <div className="flex flex-col gap-1">
                     <h2 className="text-sm font-bold text-text flex items-center gap-2">
@@ -612,16 +668,34 @@ type MediaCardProps = {
 }
 
 const MediaCard = ({ cardRef, media, index, total, isDragging, removeMedia, moveMedia, onPointerDown, onEdit, thumbnailState, onPickThumbnail }: MediaCardProps) => {
-    const isVideo = media.originalMedia.media_type === 'video'
-    const isAudio = media.originalMedia.media_type === 'audio'
+    const wrapperRef = useRef<HTMLDivElement>(null)
+    // Rect of the whole card (image + footer), captured on hover — drives a
+    // portaled tooltip (see below) rather than a plain CSS group-hover
+    // sibling. A same-DOM sibling positioned below the card gets clipped by
+    // the panel's own bottom edge whenever the card is in the grid's last
+    // row (the panel has no room to grow just for a hover tooltip); a
+    // portal to document.body escapes that the same way the drag ghost
+    // above already does.
+    const [tooltipRect, setTooltipRect] = useState<{ top: number; left: number; width: number } | null>(null)
+
+    function showTooltip() {
+        const rect = wrapperRef.current?.getBoundingClientRect()
+        if (rect) setTooltipRect({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+    }
+
     return (
-        // Videos get a footer row (filename, thumbnail button, progress bar)
-        // in normal document flow below the square preview instead of piling
-        // onto the same absolute bottom-0 strip the square itself uses —
-        // that's what was making the progress bar unreadable. Images have no
-        // footer content, so they stay exactly as before: a single square
-        // tile with everything overlaid.
-        <div className="flex flex-col gap-2">
+        // Every media type gets its filename in a footer row, in normal
+        // document flow below the square preview, rather than overlaid on
+        // top of the thumbnail — an overlay sat in the same corner as (and
+        // fought for legibility/space with) the position counter and other
+        // controls. Video additionally piles its thumbnail button and
+        // generation progress bar into the same footer.
+        <div
+            ref={wrapperRef}
+            onMouseEnter={showTooltip}
+            onMouseLeave={() => setTooltipRect(null)}
+            className="relative flex flex-col gap-2"
+        >
             <div
                 ref={cardRef}
                 onPointerDown={onPointerDown}
@@ -644,28 +718,15 @@ const MediaCard = ({ cardRef, media, index, total, isDragging, removeMedia, move
                 // opacity modifier can't reliably color-mix an opaque CSS var
                 // it can't peek inside — a soft brand-yellow halo per request,
                 // layered outside the existing neutral border, not replacing it.
-                className="group relative rounded-lg overflow-hidden bg-surface border border-border ring-1 ring-[oklch(0.70_0.200_80/0.25)] shadow-sm w-full h-full">
-                {/* Full-filename hover reveal — a themed replacement for the
-                    native `title` tooltip, since filenames get truncated
-                    elsewhere on the tile. Tilts open from the top edge like a
-                    hinged flap (real 3D perspective, not just a fade) and
-                    stays fully inside the tile's own bounds so the card's
-                    overflow-hidden never clips it. */}
-                <div
-                    className="absolute top-2 left-2 right-2 z-30 opacity-0 pointer-events-none [transform:perspective(500px)_rotateX(16deg)_translateY(-6px)] transition-all duration-[var(--motion-base)] ease-[var(--motion-ease)] group-hover:opacity-100 group-hover:[transform:perspective(500px)_rotateX(0deg)_translateY(0px)]"
-                    style={{ transformOrigin: 'top center' }}
-                >
-                    <div className="bg-surface/95 backdrop-blur-md border border-border rounded-md px-3 py-2 shadow-md border-b-2 border-b-[oklch(0.70_0.200_80/0.6)]">
-                        <p className="text-text-h text-[11px] font-semibold break-words">
-                            {media.originalMedia.fileName}
-                        </p>
-                    </div>
-                </div>
-
+                className="relative rounded-lg overflow-hidden bg-surface border border-border ring-1 ring-[oklch(0.70_0.200_80/0.25)] shadow-sm w-full h-full">
                 {/* Position control — always visible (not hover-gated: hover
                     doesn't exist on touch), big enough to tap. Nudges one step
-                    at a time so the move is always a predictable, visible swap. */}
-                <div className="absolute top-2 left-2 z-20 flex items-center gap-0.5 bg-surface/95 backdrop-blur-md rounded-full border border-border shadow-sm">
+                    at a time so the move is always a predictable, visible swap.
+                    z-40, above the filename flap's z-30 — the flap is
+                    pointer-events-none so it never blocked clicks here, but it
+                    visually painted over the counter on hover since both sit
+                    in the same top-left corner. */}
+                <div className="absolute top-2 left-2 z-40 flex items-center gap-0.5 bg-surface/95 backdrop-blur-md rounded-full border border-border shadow-sm">
                     <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); moveMedia(index, index - 1) }}
@@ -698,8 +759,9 @@ const MediaCard = ({ cardRef, media, index, total, isDragging, removeMedia, move
                     <Trash2 className="w-4 h-4" />
                 </button>
 
-                {/* Edit/Crop Button — images only, still overlaid (images have
-                    no footer, nothing else competes for this corner) */}
+                {/* Edit/Crop Button — images only, stays overlaid on the
+                    thumbnail itself (unlike the filename, this is an action
+                    button, not text that needs to stay legible/unclipped) */}
                 {onEdit && (
                     <button
                         className={cn(
@@ -715,35 +777,16 @@ const MediaCard = ({ cardRef, media, index, total, isDragging, removeMedia, move
                     </button>
                 )}
 
-                {/* Filename — images only get the black photo-scrim; it exists
-                    purely for legibility over arbitrary photo content, which
-                    doesn't apply to audio's flat accent-tinted card (a black
-                    gradient there just reads as an unthemed foreign block).
-                    Videos show their filename in the footer below instead. */}
-                {!isVideo && !isAudio && (
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
-                        <p className="text-white text-xs font-medium truncate drop-shadow-md">
-                            {media.originalMedia.fileName}
-                        </p>
-                    </div>
-                )}
-                {isAudio && (
-                    <div className="absolute inset-x-0 bottom-0 p-2.5 flex pointer-events-none">
-                        <span className="text-text-s text-[11px] font-medium truncate bg-surface/80 backdrop-blur-md px-2.5 py-1 rounded-pill border border-border">
-                            {media.originalMedia.fileName}
-                        </span>
-                    </div>
-                )}
-
                 <MediaVisual media={media} />
             </motion.div>
             </div>
 
-            {/* Video footer — normal flow, not an overlay, so the filename,
-                the thumbnail button, and the progress bar each get their own
-                row instead of fighting for the same bottom-0 strip. */}
-            {isVideo && (
-                <div className="flex flex-col gap-1.5 px-0.5">
+            {/* Footer — normal document flow below the tile, not an overlay,
+                so the filename never competes with the thumbnail image or
+                the controls layered on top of it. Video additionally gets
+                its thumbnail button and generation progress here, in their
+                own rows rather than piling onto the same strip. */}
+            <div className="flex flex-col gap-1.5 px-0.5">
                     <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-medium text-text-s truncate min-w-0">
                             {media.originalMedia.fileName}
@@ -786,7 +829,38 @@ const MediaCard = ({ cardRef, media, index, total, isDragging, removeMedia, move
                     {thumbnailState?.status === 'failed' && (
                         <p className="text-[11px] font-semibold text-danger">Thumbnail generation failed — upload one manually.</p>
                     )}
-                </div>
+            </div>
+
+            {/* Full-filename hover reveal — a themed replacement for the
+                native `title` tooltip, since the footer label above is
+                truncated. Portaled to document.body (like the drag ghost
+                further up this file) rather than positioned as a sibling
+                below the card — a sibling gets clipped by the panel's own
+                bottom edge whenever this card lands in the grid's last row,
+                since the panel has no reason to reserve extra height just
+                for a hover tooltip. */}
+            {createPortal(
+                <AnimatePresence>
+                    {tooltipRect && (
+                        <div
+                            style={{ position: 'fixed', top: tooltipRect.top, left: tooltipRect.left, width: tooltipRect.width, zIndex: 9999 }}
+                            className="pointer-events-none"
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, y: -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.15, ease: 'easeOut' }}
+                                className="bg-surface/95 backdrop-blur-md border border-border rounded-md px-3 py-2 shadow-md border-t-2 border-t-[oklch(0.70_0.200_80/0.6)]"
+                            >
+                                <p className="text-text-h text-[11px] font-semibold break-words">
+                                    {media.originalMedia.fileName}
+                                </p>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>,
+                document.body,
             )}
         </div>
     )
