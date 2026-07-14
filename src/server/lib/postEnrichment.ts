@@ -9,8 +9,10 @@ import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { extractKeywords } from '@/lib/text/rake'
+import { mergeKeywords } from '@/lib/text/keywordMerge'
 import { transcribeMedia, analyzeTranscriptWithAI, moderateTextWithAI } from './workersAi'
 import { logger } from './logger'
+import { clientEnv } from '@/lib/env/client-env'
 
 async function flagPostForReview(postId: string, reason: string): Promise<void> {
   const [post] = await db.select({ author_id: schema.post.author_id }).from(schema.post).where(eq(schema.post.postId, postId))
@@ -35,7 +37,7 @@ async function flagPostForReview(postId: string, reason: string): Promise<void> 
 
 export async function enrichPostForSearch(postId: string): Promise<void> {
   try {
-    const [post] = await db.select({ content: schema.post.content }).from(schema.post).where(eq(schema.post.postId, postId))
+    const [post] = await db.select({ content: schema.post.content, keywords: schema.post.keywords }).from(schema.post).where(eq(schema.post.postId, postId))
     if (!post) return
 
     const mediaRows = await db
@@ -47,7 +49,15 @@ export async function enrichPostForSearch(postId: string): Promise<void> {
     const transcribable = mediaRows.find((m) => m.media_type === 'video' || m.media_type === 'audio')
 
     if (transcribable) {
-      const transcript = await transcribeMedia(transcribable.mediaUrl)
+      // media.mediaUrl stores only the ImageKit PATH ("foo_bar.mp3"), not a
+      // fetchable URL — every other place that renders media prefixes it
+      // with clientEnv.imagekitUrlEndpoint (see PostCard.tsx's `IK` const).
+      // This call site never did, so transcribeMedia's internal fetch()
+      // threw "Invalid URL" immediately on every single video/audio post —
+      // confirmed live against a real post, not hypothetical. Transcription
+      // has never actually succeeded from this path before this fix.
+      const mediaFullUrl = `${clientEnv.imagekitUrlEndpoint}/${transcribable.mediaUrl}`
+      const transcript = await transcribeMedia(mediaFullUrl)
       if (transcript) {
         const categoryRows = await db.select({ name: schema.categories.name }).from(schema.categories)
         const allowedCategories = categoryRows.map((c) => c.name)
@@ -56,7 +66,8 @@ export async function enrichPostForSearch(postId: string): Promise<void> {
         // AI keyword/category extraction is a nice-to-have on top of a
         // transcript that already exists — RAKE on the transcript itself is
         // the fallback if the LLM call fails, not silence.
-        const keywords = analysis?.keywords.length ? analysis.keywords : extractKeywords(transcript)
+        const aiSucceeded = !!analysis?.keywords.length
+        const keywords = mergeKeywords(post.keywords, aiSucceeded ? analysis.keywords : extractKeywords(transcript))
 
         await db.update(schema.post)
           .set({
@@ -66,25 +77,34 @@ export async function enrichPostForSearch(postId: string): Promise<void> {
           })
           .where(eq(schema.post.postId, postId))
 
+        logger.info('enrichPostForSearch: transcribed', { postId, aiSucceeded, keywordCount: keywords.length })
+
         if (analysis?.flagged) {
           await flagPostForReview(postId, analysis.flagReason ?? 'potential policy violation')
         }
         return
       }
+      logger.warn('enrichPostForSearch: transcription failed or empty, falling back', { postId, mediaFullUrl })
     }
 
     // No transcribable media, or transcription failed — fall back to
     // RAKE on the post's own text, plus a moderation-only pass on that text.
     if (post.content) {
-      const keywords = extractKeywords(post.content)
-      if (keywords.length > 0) {
+      const rakeKeywords = extractKeywords(post.content)
+      if (rakeKeywords.length > 0) {
+        const keywords = mergeKeywords(post.keywords, rakeKeywords)
         await db.update(schema.post).set({ keywords }).where(eq(schema.post.postId, postId))
+        logger.info('enrichPostForSearch: RAKE fallback', { postId, keywordCount: keywords.length })
+      } else {
+        logger.warn('enrichPostForSearch: RAKE found nothing, keeping filename-only keywords', { postId, existingKeywordCount: post.keywords?.length ?? 0 })
       }
 
       const moderation = await moderateTextWithAI(post.content)
       if (moderation?.flagged) {
         await flagPostForReview(postId, moderation.reason ?? 'potential policy violation')
       }
+    } else {
+      logger.warn('enrichPostForSearch: no content and no successful transcript, keeping filename-only keywords', { postId, existingKeywordCount: post.keywords?.length ?? 0 })
     }
   } catch (e) {
     logger.error('enrichPostForSearch failed', { postId }, e instanceof Error ? e : undefined)

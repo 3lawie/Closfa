@@ -21,6 +21,19 @@ export const STOPWORDS: readonly string[] = [
   'um', 'uh', 'uhh', 'umm', 'like', 'gonna', 'wanna', 'gotta', 'kinda', 'sorta',
   'know', 'what', 'actually', 'basically', 'literally', 'really', 'stuff', 'thing', 'things',
   'kind', 'sort', 'okay', 'ok', 'yeah', 'right', 'well',
+  // Standard Arabic function words — without these, RAKE never finds a
+  // phrase boundary in Arabic text at all (confirmed live: a real Whisper
+  // transcript of an Arabic nasheed came back as a SINGLE "phrase" spanning
+  // the entire transcript, since none of its words matched the English-only
+  // list above). With these in place, RAKE can do what it's actually good
+  // at — surfacing a short repeated phrase like a chant's refrain by
+  // frequency, the same way it would for repeated English phrases.
+  'من', 'في', 'على', 'إلى', 'عن', 'أن', 'إن', 'أنه', 'أنها', 'هذا', 'هذه', 'ذلك', 'تلك',
+  'التي', 'الذي', 'الذين', 'اللاتي', 'و', 'ثم', 'أو', 'لا', 'ما', 'لم', 'لن', 'قد',
+  'كل', 'بعض', 'غير', 'أي', 'هو', 'هي', 'هم', 'أنت', 'أنتم', 'أنا', 'نحن',
+  'كان', 'كانت', 'يكون', 'تكون', 'له', 'لها', 'لهم', 'به', 'بها', 'بهم',
+  'إذا', 'حتى', 'لكن', 'أيضا', 'بين', 'عند', 'معه', 'هنا', 'هناك', 'الآن',
+  'بعد', 'قبل', 'فوق', 'تحت', 'مع', 'بلا', 'دون', 'كما', 'حيث', 'لدى', 'نعم',
 ] as const
 
 const STOPSET = new Set<string>(STOPWORDS.map((w) => w.toLowerCase()))

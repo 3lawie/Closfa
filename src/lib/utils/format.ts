@@ -3,9 +3,15 @@
 // ──────────────────────────────────────────────────────────────
 
 /** Format a date as a relative time string: "2 hours ago", "yesterday", etc. */
-export function formatRelativeTime(date: Date | string | null | undefined): string {
+export function formatRelativeTime(date: Date | string | number | null | undefined): string {
   if (!date) return ''
-  const d = typeof date === 'string' ? new Date(date) : date
+  // `new Date(...)` handles a Date, an ISO string, or a numeric epoch
+  // uniformly — server functions don't all serialize timestamps the same
+  // way (some routes hand back a real Date, others a string or a raw
+  // epoch number), and the old `typeof date === 'string' ? ... : date`
+  // check silently left non-Date, non-string values (e.g. a number)
+  // unconverted, so `.getTime()` below threw "d.getTime is not a function".
+  const d = new Date(date)
   if (Number.isNaN(d.getTime())) return ''
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
@@ -34,8 +40,12 @@ export function formatCount(n: number | null | undefined): string {
 }
 
 /** "3d 4h" style countdown to a future date — used for a post's scheduled hard-delete. */
-export function formatTimeRemaining(target: Date | string): string {
-  const d = typeof target === 'string' ? new Date(target) : target
+export function formatTimeRemaining(target: Date | string | number): string {
+  // See formatRelativeTime's comment — `new Date(...)` handles a Date, an
+  // ISO string, or a numeric epoch uniformly, unlike the previous
+  // typeof-narrowed check which left non-string values unconverted.
+  const d = new Date(target)
+  if (Number.isNaN(d.getTime())) return 'soon'
   const ms = d.getTime() - Date.now()
   if (ms <= 0) return 'soon'
   const hours = Math.floor(ms / (1000 * 60 * 60))

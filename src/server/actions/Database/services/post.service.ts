@@ -11,6 +11,7 @@ import { ok, err, type ServerResult } from '@/server/lib/result'
 import { logger } from '@/server/lib/logger'
 import { notifyMentions } from './notification.service'
 import { enrichPostForSearch } from '@/server/lib/postEnrichment'
+import { extractKeywordsFromFilenames } from '@/lib/text/filenameKeywords'
 import { waitUntil } from 'cloudflare:workers'
 
 /** Fetch a single post for the detail route. Public (guests and users). */
@@ -100,6 +101,13 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
         mediaIds = inserted.map((r) => r.media_id)
       }
 
+      // Free, instant baseline keywords from the attached files' original
+      // names — searchable the moment this INSERT commits, not after the
+      // background enrichPostForSearch job (which depends on a Cloudflare
+      // Workers AI round trip succeeding) eventually runs. postEnrichment.ts
+      // merges into this rather than overwriting it.
+      const filenameKeywords = extractKeywordsFromFilenames(media.map((m) => m.fileName))
+
       const [postRow] = await db
         .insert(schema.post)
         .values({
@@ -111,6 +119,7 @@ export const createPostWithMedia = createServerFn({ method: 'POST' })
           is_published: true,
           published_at: new Date(),
           media_quality: mediaQuality,
+          keywords: filenameKeywords.length > 0 ? filenameKeywords : null,
         })
         .returning({ postId: schema.post.postId })
 

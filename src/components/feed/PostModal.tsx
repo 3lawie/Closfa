@@ -1,4 +1,4 @@
-import { getRouteApi } from '@tanstack/react-router'
+import { getRouteApi, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
@@ -6,6 +6,7 @@ import { PostCard } from '@/components/feed/PostCard'
 import { CommentItem } from '@/components/feed/CommentItem'
 import { CommentComposer } from '@/components/feed/CommentComposer'
 import { getPostFn, recordPostViewFn } from '@/server/actions/Database/services/post.service'
+import { logSearchClickFn } from '@/server/actions/Database/services/feed.service'
 import type { Post } from '@/lib/entities/Post'
 import { motion } from 'framer-motion'
 import { Loader2, MessageSquare } from 'lucide-react'
@@ -29,6 +30,37 @@ export function PostModal() {
     if (postId) recordPostViewFn({ data: { postId } })
 
   }, [postId])
+
+  // Search-click learning (see searchClickLearning.ts) — PostModal is the
+  // single component every "open a post" path already funnels through
+  // (comment-icon link, the `C` keyboard shortcut, a direct /post/$postId
+  // visit, etc.), so this one hook covers all of them without touching
+  // PostCard.tsx at all. `location` here is the router's raw current
+  // location, not this modal's own root-level search schema — `/search`'s
+  // `q` param belongs to a different route, so it has to be read this way
+  // rather than through routeApi.useSearch() above.
+  //
+  // Deliberately keyed on the `q` param's presence, NOT `location.pathname
+  // === '/search'` — the comment-icon Link that opens a post from search
+  // results (PostCard.tsx) is a root-scoped Link with no explicit `to`, so
+  // clicking it resolves against the ROOT's own path and navigates to `/`
+  // (keeping `q` in the URL) before this component ever mounts. By the time
+  // this effect runs, the pathname has already changed; `q`'s presence is
+  // the only signal that survives that navigation.
+  // Selected down to the primitive `q` string itself, not the `location`
+  // object — useRouterState re-runs `select` (and can hand back a new
+  // `location` object reference with identical field values) on every
+  // router state change, not just when `q` actually changes. Depending on
+  // that object directly re-fired this effect several times for a single
+  // click (confirmed live: one click logged 3 rows), which let a single
+  // click blow straight through the click-learning threshold instead of
+  // requiring genuinely repeated clicks. A string primitive compares by
+  // value, so the effect now only re-runs when `q` itself actually changes.
+  const searchQ = useRouterState({ select: (s) => (s.location.search as { q?: string }).q })
+  useEffect(() => {
+    if (!postId || !searchQ) return
+    logSearchClickFn({ data: { query: searchQ, postId } })
+  }, [postId, searchQ])
 
   // Deep-link from a comment/reply notification — same scroll+highlight
   // treatment as post.$postId.tsx.

@@ -56,6 +56,17 @@ export function AccountRail({ session }: { session: PublicSessionData }) {
         )}
       </button>
 
+      {/* Search — its own standalone button (rendered here in the global
+          rail, so it's reachable from the feed and every other page), not
+          buried a click deep inside the "more" menu below. */}
+      <Link
+        to="/search"
+        className="w-11 h-11 rounded-[var(--r-pill)] bg-surface border border-border shadow-sm flex items-center justify-center text-text-s hover:text-accent transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+        aria-label="Search"
+      >
+        <Search className="w-5 h-5" />
+      </Link>
+
       {/* More menu — dashboard / publish / logout */}
       <div ref={menuRef} className="relative">
         <button
@@ -99,13 +110,6 @@ export function AccountRail({ session }: { session: PublicSessionData }) {
                 className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-text hover:bg-surface-translucent transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
               >
                 <PenSquare className="w-4 h-4 text-text-s" /> Publish
-              </Link>
-              <Link
-                to="/search"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-text hover:bg-surface-translucent transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
-              >
-                <Search className="w-4 h-4 text-text-s" /> Search
               </Link>
               <Link
                 to="/my-posts"

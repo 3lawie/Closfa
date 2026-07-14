@@ -5,14 +5,26 @@ import { z } from 'zod'
 import { searchPostsFn } from '@/server/actions/Database/services/feed.service'
 import { PostCard } from '@/components/feed/PostCard'
 import type { Post } from '@/lib/entities/Post'
-import { Search, Loader2 } from 'lucide-react'
+import { Search, Loader2, AlertTriangle } from 'lucide-react'
 
 export const Route = createFileRoute('/search')({
   validateSearch: z.object({ q: z.string().optional() }),
   loaderDeps: ({ search }) => ({ q: search.q }),
   loader: async ({ deps, context }) => {
-    const initialResults = deps.q ? await searchPostsFn({ data: { query: deps.q } }).catch(() => null) : null
-    return { session: context.session, initialResults }
+    if (!deps.q) return { session: context.session, initialResults: null }
+    try {
+      const initialResults = await searchPostsFn({ data: { query: deps.q } })
+      return { session: context.session, initialResults }
+    } catch (err) {
+      // Logged, not swallowed — a broken search backend (e.g. a missing
+      // Postgres function the query depends on) used to look identical to
+      // "no matches" here, which made a real outage indistinguishable from
+      // an empty result set. initialResults stays null either way; the
+      // client-side query below re-fetches and surfaces its own error
+      // state for the UI to branch on.
+      console.error('[search] loader query failed:', err)
+      return { session: context.session, initialResults: null }
+    }
   },
   component: SearchPage,
 })
@@ -28,6 +40,10 @@ function SearchPage() {
     queryFn: () => searchPostsFn({ data: { query: q! } }),
     initialData: initialResults ?? undefined,
     enabled: !!q,
+    // A search backend failure (e.g. a missing DB function) is
+    // deterministic, not transient — retrying just delays showing the user
+    // what actually happened.
+    retry: false,
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -60,6 +76,17 @@ function SearchPage() {
       {resultsQuery.isFetching && !resultsQuery.data ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-8 h-8 text-accent animate-spin" />
+        </div>
+      ) : resultsQuery.isError ? (
+        // Distinct from "no matches" on purpose — a search backend failure
+        // used to render the exact same empty state as zero results, which
+        // made a real outage look like nothing simply matched the query.
+        <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
+          <AlertTriangle className="w-8 h-8 text-danger mb-2" />
+          <p className="text-text-h text-xl font-bold">Search isn't working right now</p>
+          <p className="text-text-s max-w-xs">
+            {resultsQuery.error instanceof Error ? resultsQuery.error.message : 'Something went wrong. Please try again.'}
+          </p>
         </div>
       ) : q && results.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center gap-2">

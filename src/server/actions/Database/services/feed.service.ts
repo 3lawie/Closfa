@@ -1,6 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import { queries } from '@/server/queries'
 import { authMiddleware, optionalAuthMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
+import { logSearchClick } from '@/server/lib/searchClickLearning'
+import { waitUntil } from 'cloudflare:workers'
 import type { FeedPage } from '@/lib/entities/Post'
 import z from 'zod'
 
@@ -68,4 +70,20 @@ export const searchPostsFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<FeedPage['posts']> => {
     const posts = await queries.post.search(data.query)
     return posts as unknown as FeedPage['posts']
+  })
+
+const searchClickInput = z.object({ query: z.string().min(1).max(200), postId: z.string().min(1) })
+
+/**
+ * Logged whenever a search result gets opened (see PostModal.tsx) — never
+ * blocks navigation to the post, the client fires this without awaiting it.
+ * Same public reach as search itself: guests' clicks count toward the
+ * click-learning threshold same as logged-in users' (see
+ * searchClickLearning.ts).
+ */
+export const logSearchClickFn = createServerFn({ method: 'POST' })
+  .middleware([optionalAuthMiddleware, rateLimiterMiddleWare])
+  .inputValidator(searchClickInput)
+  .handler(async ({ data, context }) => {
+    waitUntil(logSearchClick(data.query, data.postId, context.session?.userId ?? null))
   })

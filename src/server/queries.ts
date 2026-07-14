@@ -374,14 +374,43 @@ export const queries = {
     // above) for conditions the relational filter DSL's named operators
     // can't express — full-text match/rank need raw SQL functions, not
     // just comparison operators.
+    //
+    // Column references MUST come from the relational-filter proxy (`p`
+    // below), not a hand-typed `post.content` string — Drizzle's relational
+    // query builder doesn't guarantee the post table is aliased as bare
+    // `post` in the generated FROM clause, so a literal string reference
+    // threw "invalid reference to FROM-clause entry for table post" while
+    // `p.content`/`p.keywords` let Drizzle resolve the actual alias itself,
+    // exactly like keywordExclusionRaw already does above.
     search: async (searchQuery: string, limit = 20) => {
-      const tsvectorExpr = sql`closfa_post_tsvector(post.content, post.keywords)`
+      const tsvectorFor = (p: any) => sql`closfa_post_tsvector(${p.content}, ${p.keywords})`
+
+      // A single OR-of-terms query, not "try AND, only fall back to OR if
+      // the WHOLE result set was empty" (the previous shape) — that
+      // two-step version excluded a genuinely relevant partial match
+      // (3 of 4 words) any time a DIFFERENT post happened to satisfy the
+      // full AND query, since the fallback branch only ever ran when the
+      // primary query returned zero rows total, not per-post. ts_rank
+      // already scores a document matching every term higher than one
+      // matching fewer — the two-step precision/recall split was solving a
+      // problem ts_rank solves on its own within a single query, so this is
+      // simpler AND more correct, not a tradeoff.
+      const words = searchQuery.trim().split(/\s+/).filter(Boolean)
+      const tsquery = () =>
+        words.length > 1
+          ? sql.join(words.map((w) => sql`plainto_tsquery('english', ${w})`), sql` || `)
+          : sql`plainto_tsquery('english', ${searchQuery})`
+
+      // `likes` (the same signal "For You" ranks by, queries.post.getFeed
+      // below) only breaks ties between similarly-relevant results — it's a
+      // secondary sort key AFTER ts_rank, never instead of it, so a
+      // popular-but-unrelated post can't outrank a precise match.
       const posts = await db.query.post.findMany({
         where: w({
           is_published: true,
-          RAW: () => sql`${tsvectorExpr} @@ plainto_tsquery('english', ${searchQuery})`,
+          RAW: (p: any) => sql`${tsvectorFor(p)} @@ (${tsquery()})`,
         }),
-        orderBy: () => [sql`ts_rank(${tsvectorExpr}, plainto_tsquery('english', ${searchQuery})) DESC`],
+        orderBy: (p: any, { desc }: any) => [sql`ts_rank(${tsvectorFor(p)}, ${tsquery()}) DESC`, desc(p.likes)],
         limit,
         with: WITH_FEED_AUTHOR,
       })

@@ -463,6 +463,26 @@ export const savedPost = pgTable("saved_post", {
     savedPostUserIndex: index("saved_post_user_index").on(table.userId),
 }))
 
+// Raw search-click log — one row per (query, post) a user actually opened
+// from search results (see server/lib/searchClickLearning.ts). userId is
+// nullable, unlike savedPost/postLike, because search itself is public
+// (optionalAuthMiddleware) — guests click results too, and their clicks
+// still count toward the "enough distinct users" threshold before a
+// query's words get merged into the post's own keywords. No unique
+// constraint on purpose: the same user clicking the same post for the same
+// query twice is a real repeated signal, not a duplicate to collapse.
+export const searchClick = pgTable("search_click", {
+    id: varchar("id").primaryKey().$defaultFn(() => createId()),
+    query: text("query").notNull(),
+    postId: varchar("post_id").notNull().references(() => post.postId),
+    userId: varchar("user_id").references(() => user.userId),
+    createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+    // Backs searchClickLearning's "how many distinct users clicked this
+    // (query, post) pair" count, run on every click.
+    searchClickQueryPostIndex: index("search_click_query_post_index").on(table.query, table.postId),
+}))
+
 // Idempotent-unique like on a comment — mirrors postLike's shape exactly.
 export const commentLike = pgTable("comment_like", {
     id: varchar("id").primaryKey().$defaultFn(() => createId()),
@@ -515,5 +535,5 @@ export const schema = {
     comment, commentReply, commentLike, commentReplyLike,
     media, postToUser, postToMedia,
     profileMember, report, auditLog, notification, notificationPreference, subscription,
-    siteRole, roleGrant, userBlock, savedPost, mutedKeyword,
+    siteRole, roleGrant, userBlock, savedPost, mutedKeyword, searchClick,
 };

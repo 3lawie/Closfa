@@ -8,6 +8,25 @@
 import { env } from 'cloudflare:workers'
 import { logger } from './logger'
 
+// @cf/meta/llama-3.1-8b-instruct-fp8 rejects response_format: json_schema
+// outright ("5025: This model doesn't support JSON Schema.") — confirmed via
+// a real call against this exact model, not a hypothetical. Every call that
+// used to pass that option failed every single time, not occasionally,
+// which silently broke both moderateTextWithAI and analyzeTranscriptWithAI.
+// The fix: ask for JSON in the prompt alone (already does) and parse the
+// raw text defensively — models asked for "JSON only" still sometimes wrap
+// it in a ```json fence, so strip that before JSON.parse rather than
+// letting a parse failure send back null.
+function parseJsonResponse(raw: string): unknown | null {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  const candidate = fenced ? fenced[1] : raw
+  try {
+    return JSON.parse(candidate)
+  } catch {
+    return null
+  }
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   // Spreading a large Uint8Array straight into String.fromCharCode(...bytes)
   // blows the call stack on anything but a small file — chunking avoids that
@@ -68,26 +87,17 @@ export async function moderateTextWithAI(text: string): Promise<ModerationResult
           content:
             'You moderate a social media post\'s text. Flag it only if it contains hate speech, harassment, ' +
             'sexual content involving minors, or credible violent threats — ordinary strong language or ' +
-            'controversial opinions are NOT flaggable. Respond with strict JSON matching the schema, nothing else.',
+            'controversial opinions are NOT flaggable. Respond with ONLY a raw JSON object of the exact shape ' +
+            '{"flagged": boolean, "reason": string} — no markdown fences, no other text.',
         },
         { role: 'user', content: text.slice(0, 2000) },
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          type: 'object',
-          properties: {
-            flagged: { type: 'boolean' },
-            reason: { type: 'string' },
-          },
-          required: ['flagged'],
-        },
-      },
     })
 
     const raw = result.response
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<ModerationResult>
+    const parsed = parseJsonResponse(raw) as Partial<ModerationResult> | null
+    if (!parsed) return null
     return {
       flagged: parsed.flagged === true,
       reason: typeof parsed.reason === 'string' ? parsed.reason : null,
@@ -124,33 +134,23 @@ export async function analyzeTranscriptWithAI(
           role: 'system',
           content:
             'You analyze a spoken video/audio transcript for a social media post. ' +
-            'Extract 5-10 short topical keywords or phrases (ignore filler words and disfluencies). ' +
+            'Extract 5-10 short topical keywords or phrases (ignore filler words and disfluencies) — ' +
+            'keep them in the SAME language/script as the transcript, never translate them. ' +
             `Pick the single best-fitting category from this exact list: ${allowedCategories.join(', ')}. ` +
             'Flag the content only if it contains hate speech, harassment, sexual content involving minors, ' +
             'or credible violent threats — ordinary strong language or controversial opinions are NOT flaggable. ' +
-            'Respond with strict JSON matching the schema, nothing else.',
+            'Respond with ONLY a raw JSON object of the exact shape ' +
+            '{"keywords": string[], "category": string, "flagged": boolean, "flagReason": string} — ' +
+            'no markdown fences, no other text.',
         },
         { role: 'user', content: transcript.slice(0, 4000) },
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          type: 'object',
-          properties: {
-            keywords: { type: 'array', items: { type: 'string' } },
-            category: { type: 'string' },
-            flagged: { type: 'boolean' },
-            flagReason: { type: 'string' },
-          },
-          required: ['keywords', 'category', 'flagged'],
-        },
-      },
     })
 
     const raw = result.response
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<PostAiAnalysis>
-    if (!Array.isArray(parsed.keywords)) return null
+    const parsed = parseJsonResponse(raw) as Partial<PostAiAnalysis> | null
+    if (!parsed || !Array.isArray(parsed.keywords)) return null
 
     return {
       keywords: parsed.keywords.filter((k): k is string => typeof k === 'string').slice(0, 10),

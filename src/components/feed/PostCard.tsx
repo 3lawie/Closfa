@@ -19,6 +19,8 @@ import { formatRelativeTime, formatCount, formatDuration } from '@/lib/utils/for
 import { clientEnv } from '@/lib/env/client-env'
 import type { Post, Media, PostAuthor } from '@/lib/entities/Post'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { attachAudioWave } from '@/lib/media/audioWaveWorker'
+import { drawWave, bandLevel } from '@/lib/media/audioWaveDraw'
 import { ImageLightbox } from '@/components/media/ImageLightbox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
@@ -130,14 +132,35 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; poster?: string; 
   function togglePlay() {
     const v = videoRef.current
     if (!v) return
-    if (v.paused) v.play()
-    else v.pause()
+    if (v.paused) {
+      // Can race the autoplay-on-switch effect's own in-flight play()
+      // promise (see playPromiseRef above) — if this rejects, `playing`
+      // never gets an onPlay event to flip it, so the overlay button
+      // silently stays wrong with no error surfaced. Reconciling from the
+      // element's real `paused` state once the promise settles keeps it
+      // honest even when playback didn't actually start.
+      v.play().catch(() => setPlaying(!v.paused))
+    } else {
+      v.pause()
+    }
   }
 
   function seekTo(value: number) {
     setSeekValue(value)
     if (videoRef.current) videoRef.current.currentTime = value
   }
+
+  // Catches metadata that resolved before this component's onLoadedMetadata/
+  // onDurationChange handlers were wired up — the browser starts fetching
+  // preload="metadata" the moment it parses the server-rendered <video> tag,
+  // which can resolve before React finishes hydrating and attaching its
+  // handlers, so the native event fires with nothing listening yet. Without
+  // this, `duration` state (and therefore the seek bar's max) stays stuck at
+  // 0 forever even though the element itself already knows its real length.
+  useEffect(() => {
+    const v = videoRef.current
+    if (v && Number.isFinite(v.duration)) setDuration(v.duration)
+  }, [])
 
   useImperativeHandle(ref, () => ({
     togglePlay,
@@ -162,7 +185,11 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; poster?: string; 
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        // Some MP4/WebM streams (ImageKit-transcoded ones especially) report
+        // duration as NaN right at loadedmetadata and only resolve the real
+        // value afterward via durationchange — see AudioSlide's identical fix.
+        onLoadedMetadata={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration) }}
+        onDurationChange={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration) }}
       />
 
       {!playing && (
@@ -210,11 +237,9 @@ const VideoSlide = forwardRef<MediaSlideHandle, { src: string; poster?: string; 
 
 // ── Themed audio slide ───────────────────────────────────────────
 // Design intent: a calm listening moment where the accent visibly breathes
-// with the sound — a real AnalyserNode-driven equalizer reacting to actual
-// playback amplitude, not a decorative loop — rather than a bare browser
-// audio bar dropped into a square frame.
-const AUDIO_VISUALIZER_BARS = 28
-
+// with the sound — a real AnalyserNode-driven water-wave background
+// reacting to actual playback amplitude, not a decorative loop — rather
+// than a bare browser audio bar dropped into a square frame.
 const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean }>(function AudioSlide({ src, isActive }, ref) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -233,22 +258,12 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
   const [seeking, setSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState(0)
   const prefersReducedMotion = useReducedMotion()
-  // Persistent per-bar envelope-follower state (not just a fresh array each
-  // frame) — each bar gets its own randomized attack/release rate and phase
-  // so, even reacting to the same real analyser data, adjacent bars don't
-  // rise and fall in lockstep like a single pulsing block.
-  const barStatesRef = useRef<{ value: number; attack: number; release: number; phase: number }[] | null>(null)
-  function getBarStates() {
-    if (!barStatesRef.current) {
-      barStatesRef.current = Array.from({ length: AUDIO_VISUALIZER_BARS }, () => ({
-        value: 0,
-        attack: 0.32 + Math.random() * 0.18,
-        release: 0.08 + Math.random() * 0.06,
-        phase: Math.random() * Math.PI * 2,
-      }))
-    }
-    return barStatesRef.current
-  }
+  // Read by the wave-driving effect below without making `playing` a effect
+  // dependency — the effect attaches this canvas to the wave Worker exactly
+  // once (transferControlToOffscreen can only ever be called once per
+  // canvas element), so it can't re-run every time playback toggles.
+  const playingRef = useRef(false)
+  useEffect(() => { playingRef.current = playing }, [playing])
 
   // Deliberately no autoplay-on-switch here, unlike VideoSlide: audio has no
   // silent/muted middle ground the way a muted video does — playing sound
@@ -296,14 +311,33 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
     if (!a) return
     ensureAudioGraph()
     audioCtxRef.current?.resume()
-    if (a.paused) a.play()
-    else a.pause()
+    if (a.paused) {
+      // Unlike VideoSlide's autoplay-on-switch, this play() call is never
+      // handed a .catch() elsewhere — if it rejects (a slow AudioContext
+      // resume, a transient decode error), the button's `playing` state
+      // never gets an onPlay event to flip it, so it silently stays wrong
+      // with no error surfaced. Reconciling from the element's real
+      // `paused` state once the promise settles keeps the icon honest even
+      // when playback didn't actually start.
+      a.play().catch(() => setPlaying(!a.paused))
+    } else {
+      a.pause()
+    }
   }
 
   function seekTo(value: number) {
     setSeekValue(value)
     if (audioRef.current) audioRef.current.currentTime = value
   }
+
+  // See VideoSlide's identical fix: catches duration metadata that resolved
+  // before React finished hydrating and attaching onLoadedMetadata/
+  // onDurationChange, which otherwise leaves the seek bar's max stuck at 0
+  // forever even once the element itself has a real duration.
+  useEffect(() => {
+    const a = audioRef.current
+    if (a && Number.isFinite(a.duration)) setDuration(a.duration)
+  }, [])
 
   useImperativeHandle(ref, () => ({
     togglePlay,
@@ -314,79 +348,118 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
     },
   }), [duration])
 
-  // Draws real amplitude bars from the analyser while playing; a calm flat
-  // baseline otherwise (or when the visitor has asked for reduced motion —
-  // this loop is genuinely reactive to the audio, not decorative, but a
-  // constantly-animating equalizer is still motion some visitors opt out of).
+  // Attaches this canvas to the shared audioWave Worker exactly once on
+  // mount — deliberately an empty deps array, not [playing]: canvas.
+  // transferControlToOffscreen() can only be called once per canvas element
+  // for its whole lifetime, so this can't re-run every play/pause toggle.
+  // Whether the wave reacts to real audio or settles to its idle swell is
+  // instead driven by playingRef inside the per-frame loop below — pausing
+  // just stops fresh analyser data from arriving, and the Worker (or the
+  // fallback loop, on browsers without OffscreenCanvas) decays toward the
+  // idle baseline on its own once data goes stale.
   useEffect(() => {
     const canvas = canvasRef.current
-    const ctx2d = canvas?.getContext('2d')
-    if (!canvas || !ctx2d) return
+    if (!canvas) return
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || 'currentColor'
+
+    // Reduced motion is captured once here, at mount — same one-shot
+    // constraint as above. A visitor toggling their OS motion setting
+    // mid-session on this exact slide is an acceptable edge case to miss.
+    if (prefersReducedMotion) {
+      const ctx2d = canvas.getContext('2d')
+      if (!ctx2d) return
+      const dpr = window.devicePixelRatio || 1
+      const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect()
+      canvas.width = Math.max(1, Math.round(cssWidth * dpr))
+      canvas.height = Math.max(1, Math.round(cssHeight * dpr))
+      drawWave(ctx2d, canvas.width, canvas.height, 0, 0, 0, accentColor)
+      return
+    }
 
     const dpr = window.devicePixelRatio || 1
-    // Resolved once per run (playing/theme rarely flips mid-frame) rather
-    // than every animation frame, to avoid a getComputedStyle call 60x/sec.
-    const barColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || 'currentColor'
+    const handle = attachAudioWave(canvas, accentColor)
 
-    function drawBars(levels: number[]) {
+    if (handle) {
+      // Rebound to a fresh, non-nullable const — TS's control-flow narrowing
+      // from `if (handle)` doesn't carry into the nested `loop` closure below.
+      const waveHandle = handle
+      const resizeObserver = new ResizeObserver(() => {
+        const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect()
+        waveHandle.resize(Math.max(1, Math.round(cssWidth * dpr)), Math.max(1, Math.round(cssHeight * dpr)))
+      })
+      resizeObserver.observe(canvas)
+
+      let rafId: number
+      let data: Uint8Array<ArrayBuffer> | null = null
+      function loop() {
+        rafId = requestAnimationFrame(loop)
+        const analyser = analyserRef.current
+        // Nothing to report before the audio graph exists (never played
+        // yet) — the Worker's instance already starts in its idle mode by
+        // default. Once it exists, push every frame regardless of playing
+        // state so the Worker's `playing` flag flips promptly in both
+        // directions instead of inferring pause from data going stale.
+        if (!analyser) return
+        if (!data || data.length !== analyser.frequencyBinCount) data = new Uint8Array(analyser.frequencyBinCount)
+        if (playingRef.current) analyser.getByteFrequencyData(data)
+        else data.fill(0)
+        waveHandle.pushLevels(data, playingRef.current)
+      }
+      loop()
+
+      return () => {
+        cancelAnimationFrame(rafId)
+        resizeObserver.disconnect()
+        waveHandle.destroy()
+      }
+    }
+
+    // No Worker/OffscreenCanvas support — draw the identical wave directly
+    // on the main thread instead of losing the feature outright.
+    const ctx2d = canvas.getContext('2d')
+    if (!ctx2d) return
+    let rafId: number
+    // Accumulated clock, not elapsed wall-clock seconds — see drawWave's
+    // doc comment for why: recomputing phase as elapsedTime × currentSpeed
+    // would rescale the whole animation history every time the audio level
+    // (and therefore intended speed) changes, which is constantly once
+    // real music plays — the animation would jump to a different phase on
+    // every fluctuation instead of continuing smoothly.
+    let clock = 0
+    let smoothedLevel = 0
+    // Eased toward 1 while playing, 0 while paused — drives the crossfade
+    // between the two animations in drawWave rather than a hard cut.
+    let transition = 0
+    let lastFrameTime = performance.now()
+    let data: Uint8Array<ArrayBuffer> | null = null
+    function loop(now: number) {
+      rafId = requestAnimationFrame(loop)
+      const dt = Math.min(0.05, (now - lastFrameTime) / 1000)
+      lastFrameTime = now
+
       const { width: cssWidth, height: cssHeight } = canvas!.getBoundingClientRect()
       const width = Math.max(1, Math.round(cssWidth * dpr))
       const height = Math.max(1, Math.round(cssHeight * dpr))
       if (canvas!.width !== width) canvas!.width = width
       if (canvas!.height !== height) canvas!.height = height
 
-      ctx2d!.clearRect(0, 0, width, height)
-      ctx2d!.fillStyle = barColor
-      const barWidth = width / AUDIO_VISUALIZER_BARS
-      const gap = barWidth * 0.35
-      const w = barWidth - gap
-      const radius = Math.min(w / 2, 3 * dpr)
-      levels.forEach((level, i) => {
-        const barHeight = Math.max(height * 0.08, level * height)
-        const x = i * barWidth + gap / 2
-        const y = (height - barHeight) / 2
-        ctx2d!.beginPath()
-        ctx2d!.roundRect(x, y, w, barHeight, radius)
-        ctx2d!.fill()
-      })
-    }
-
-    if (!playing || prefersReducedMotion || !analyserRef.current) {
-      drawBars(new Array(AUDIO_VISUALIZER_BARS).fill(0))
-      return
-    }
-
-    const analyser = analyserRef.current
-    const data = new Uint8Array(analyser.frequencyBinCount)
-    // Sampling is biased toward the lower ~70% of bins — that's where music's
-    // perceptible energy actually lives, the top of the spectrum reads as
-    // near-silent noise and left the bars on the right looking permanently dead.
-    const usableBins = Math.floor(analyser.frequencyBinCount * 0.7)
-    const barStates = getBarStates()
-    let lastFrameTime = performance.now()
-
-    let rafId: number
-    function loop(now: number) {
-      rafId = requestAnimationFrame(loop)
-      const dt = Math.min(0.05, (now - lastFrameTime) / 1000)
-      lastFrameTime = now
-      analyser.getByteFrequencyData(data)
-      const levels = barStates.map((bar, i) => {
-        const bin = Math.floor((i / AUDIO_VISUALIZER_BARS) * usableBins)
-        const target = data[bin] / 255
-        // VU-meter physics: each bar rises fast toward a transient but falls
-        // back slower — that asymmetry, plus this bar's own randomized rate,
-        // is what makes the row read as alive instead of one pulsing block.
-        const rate = target > bar.value ? bar.attack : bar.release
-        bar.value += (target - bar.value) * Math.min(1, rate * (dt * 60))
-        const wobble = 0.025 * Math.sin(now / 280 + bar.phase)
-        return Math.max(0, Math.min(1, bar.value + wobble))
-      })
-      drawBars(levels)
+      const analyser = analyserRef.current
+      const playing = playingRef.current
+      let rawLevel = 0
+      if (playing && analyser) {
+        if (!data || data.length !== analyser.frequencyBinCount) data = new Uint8Array(analyser.frequencyBinCount)
+        analyser.getByteFrequencyData(data)
+        rawLevel = bandLevel(data)
+      }
+      smoothedLevel += (rawLevel - smoothedLevel) * 0.15
+      transition += ((playing ? 1 : 0) - transition) * Math.min(1, 3.5 * dt)
+      const speed = playing ? 0.06 + smoothedLevel * 0.15 : 0.05
+      clock += dt * speed
+      drawWave(ctx2d!, width, height, clock, smoothedLevel, transition, accentColor)
     }
     loop(performance.now())
     return () => cancelAnimationFrame(rafId)
-  }, [playing, prefersReducedMotion])
+  }, [])
 
   return (
     <div className="relative w-full h-full flex flex-col bg-accent-bg">
@@ -420,53 +493,25 @@ const AudioSlide = forwardRef<MediaSlideHandle, { src: string; isActive: boolean
           tier rather than another block stacked in the same centered column
           (Refactoring UI's core lesson: hierarchy comes from real
           size/weight/placement differences, not uniform centered stacking). */}
-      <div className="relative flex-1 min-h-0 flex items-center justify-center px-8">
+      {/* No visible play/pause control here by design — the wave animation
+          itself is the indicator (ripples while playing, drifting motes
+          while paused), and the whole zone is the tap target. Still a real
+          button semantically (role, tabIndex, aria-label, Enter/Space) so
+          it stays keyboard- and screen-reader-operable despite having no
+          visible affordance. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={togglePlay}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          togglePlay()
+        }}
+        aria-label={playing ? 'Pause' : 'Play'}
+        className="relative flex-1 min-h-0 flex items-center justify-center px-8 cursor-pointer"
+      >
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" aria-hidden="true" />
-        <div className="relative flex items-center justify-center">
-          {/* Pulsing ring — only while actually playing (bounded, not an
-              infinite decorative loop), same pattern as AccountRail's unread
-              notification indicator. Skipped under reduced motion. */}
-          {playing && !prefersReducedMotion && (
-            <motion.span
-              className="absolute inset-0 rounded-full bg-accent"
-              animate={{ scale: [1, 1.35, 1], opacity: [0.35, 0, 0.35] }}
-              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          )}
-          <button
-            onClick={togglePlay}
-            className="relative w-16 h-16 rounded-full bg-surface shadow-md border border-border flex items-center justify-center text-accent transition-transform duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:scale-105"
-            aria-label={playing ? 'Pause' : 'Play'}
-          >
-            {/* Crossfade instead of an instant icon swap — a real transition
-                between the two states rather than a hard cut. */}
-            <AnimatePresence mode="wait" initial={false}>
-              {playing ? (
-                <motion.span
-                  key="pause"
-                  initial={{ opacity: 0, scale: 0.6 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.6 }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex"
-                >
-                  <Pause className="w-6 h-6" fill="currentColor" />
-                </motion.span>
-              ) : (
-                <motion.span
-                  key="play"
-                  initial={{ opacity: 0, scale: 0.6 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.6 }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex"
-                >
-                  <Play className="w-6 h-6 ml-0.5" fill="currentColor" />
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </button>
-        </div>
       </div>
 
       {/* Secondary zone: the transport strip, permanently docked to the
@@ -647,10 +692,22 @@ const MediaGrid = forwardRef<MediaGridHandle, { media: Media[], mediaQuality?: '
               <ChevronRight size={16} />
             </button>
           )}
-          <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/50 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none">
+          {/* top-left, not top-right — the per-image "View full preview"
+              button sits at top-3 right-3 on image slides, and this badge
+              used to sit directly on top of it. */}
+          <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-black/50 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none">
             {index + 1}/{media.length}
           </div>
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 pointer-events-none">
+          {/* Raised clear of the bottom edge on audio/video slides — those
+              have their own transport strip (seek bar + time) docked to the
+              card's bottom, and this indicator used to sit right on top of
+              it. Image slides have no bottom UI, so it can sit low there. */}
+          <div
+            className={cn(
+              "absolute left-1/2 -translate-x-1/2 flex gap-1.5 pointer-events-none",
+              media[index]?.media_type === 'image' ? 'bottom-3' : 'bottom-14',
+            )}
+          >
             {media.map((m, i) => (
               <div
                 key={m.media_id}
