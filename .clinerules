@@ -1,0 +1,47 @@
+# Closfa
+
+Aware-intention social media app. TanStack Start (React 19, TS) on Cloudflare Workers, Neon Postgres via Drizzle, Auth0 PKCE (BFF), JWE session cookies (jose), ImageKit media, Upstash Redis rate limiting, Tailwind v4.
+
+## Architecture invariants (non-negotiable)
+
+1. **Session decryption happens once** — via the middleware chain. Server functions read `context.session`. Route `beforeLoad` guards use the dedicated session-fetch function. Never double-decrypt.
+2. **ORM API separation** — relational reads use object filters; builder writes use operator functions. Never mix. Never silence a filter type error with `as any`.
+3. **Every server function validates input** — Zod schemas from `src/verification/`, shared with client forms. No untyped casts.
+4. **Expected failures return structured results** — the error contract (`ok: true | ok: false`) replaces throws for business-logic failures. Throws are for infrastructure faults.
+5. **Authorization checks are pure functions** — they receive the session as a parameter. Ownership is verified before writes, never from client-supplied IDs alone.
+6. **Edge runtime only** — no Node-only APIs (fs, net, crypto callbacks). Web APIs and edge-compatible libraries only.
+
+## Layout
+
+- `src/server/actions/Database/services/` — server functions (business logic + persistence)
+- `src/server/lib/` — middleware, session, rate limiting, error contract, bot protection
+- `src/server/db/` — ORM schema, relations, cache layer
+- `src/verification/` — validation schemas shared between server and client
+- `src/routes/_authenticated/` — protected routes; `src/routes/api/auth/` — auth flow
+- `src/components/` — feature-grouped components; `ui/` subdirectory for shared primitives
+
+## Conventions
+
+- TypeScript strict; no `any` — fix the type instead.
+- Path alias `@/` → `src/`.
+- New code mirrors the closest existing exemplar — when nothing fits, ask before inventing a new pattern.
+- Never run `npm run db:push` or `npx drizzle-kit push` without explicit confirmation — it mutates the live schema.
+
+## Test-Driven Development: the Red → Green loop
+
+Test at pre-agreed **seams** only — the public boundary you observe behavior through, never internals. Seams in this repo: validation schemas (`src/verification/*.validation.ts`), service functions (`src/server/actions/Database/services/`, tested through their `ok:true/false` result), and authorization functions. State which seam you're testing and confirm it before writing the test — don't silently pick your own scope.
+
+1. **RED** — write one minimal test for the next seam/behavior. Run `npm test`. Confirm it fails, and for the right reason.
+2. **GREEN** — write the smallest code that passes it. Run `npm test`. Confirm it passes and nothing else broke.
+
+One seam, one test, one minimal implementation per cycle — don't write a batch of tests before any implementation (horizontal slicing). Avoid tautological tests (expected value computed the same way the code computes it) and implementation-coupled tests (mocking your own modules, asserting call counts instead of outcomes).
+
+**Refactoring is not part of this loop.** Once a slice is green, cleanup is a separate, deliberate step — don't interleave it with red/green.
+
+Mock only real system boundaries (Neon, Auth0, ImageKit, Upstash) — never your own service/validation functions.
+
+## Optional — free-worker delegation
+
+Not required, but available: `node .claude/tools/ask-worker.mjs --role <code|reason|bulk|design|general> "<brief>"` shells out to free models (Groq/Cerebras/OpenRouter) for self-contained drafting — a well-specified function, a summary, a first-pass component. Set `GROQ_API_KEY` / `CEREBRAS_API_KEY` / `OPENROUTER_API_KEY` to use it.
+
+If you do use it: put the actual task as the inline argument (or piped via stdin for long briefs) — `--file <path>` only attaches a file's *content* as reference context in the middle of the prompt, it does not hand off the task itself. Keep the instruction at the start and end of the brief, not buried between attachments. Never use it for anything touching auth, sessions, or DB migrations — do that directly.

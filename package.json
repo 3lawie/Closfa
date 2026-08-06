@@ -11,7 +11,9 @@
     "cf-typegen": "wrangler types",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@imagekit/react": "^5.0.2",
@@ -53,6 +55,7 @@
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.16",
     "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10",
     "wrangler": "^4.98.0"
   }
 }
