@@ -24,6 +24,7 @@ import { drawWave, bandLevel } from '@/lib/media/audioWaveDraw'
 import { ImageLightbox } from '@/components/media/ImageLightbox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
+import { LoginPromptModal } from '@/components/auth/LoginPromptModal'
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { toast } from '@/components/ui/Toast'
@@ -647,7 +648,8 @@ const MediaGrid = forwardRef<MediaGridHandle, { media: Media[], mediaQuality?: '
                 <button
                   onClick={() => setLightboxIndex(imagePaths.indexOf(m.mediaUrl))}
                   aria-label="View full preview"
-                  className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white/90 transition-transform duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:scale-105"
+                  className="absolute top-3 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white/90 transition-transform duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:scale-105"
+                  style={{ right: '0.75rem' }}
                 >
                   <Maximize2 size={16} />
                 </button>
@@ -695,7 +697,10 @@ const MediaGrid = forwardRef<MediaGridHandle, { media: Media[], mediaQuality?: '
           {/* top-left, not top-right — the per-image "View full preview"
               button sits at top-3 right-3 on image slides, and this badge
               used to sit directly on top of it. */}
-          <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-black/50 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none">
+          <div
+            className="absolute top-3 px-2 py-0.5 rounded-full bg-black/50 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none"
+            style={{ left: '0.75rem' }}
+          >
             {index + 1}/{media.length}
           </div>
           {/* Raised clear of the bottom edge on audio/video slides — those
@@ -791,6 +796,16 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
   const mediaGridRef = useRef<MediaGridHandle>(null)
   const navigate = rootRouteApi.useNavigate()
 
+  // Login prompt for guest users
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  const [loginPromptAction, setLoginPromptAction] = useState<'like' | 'save' | 'comment' | 'report' | 'generic'>('generic')
+  function requireAuth(action: typeof loginPromptAction): boolean {
+    if (currentUserId) return true
+    setLoginPromptAction(action)
+    setShowLoginPrompt(true)
+    return false
+  }
+
   const author = post.primaryAuthor
   const isLong = (post.content?.length ?? 0) > 280
   // Aware-intention preference: the author has opted to hide numeric
@@ -832,6 +847,7 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
   })
 
   function handleLike() {
+    if (!requireAuth('like')) return
     if (likeMutation.isPending) return
     likeMutation.mutate()
   }
@@ -961,7 +977,7 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
       else if (code === 'Space') { e.preventDefault(); mediaGridRef.current?.togglePlay() }
       else if ((code === 'KeyL' || code === 'KeyK') && !e.shiftKey) { e.preventDefault(); handleLike() }
       else if (code === 'KeyC' && !e.shiftKey) { e.preventDefault(); navigate({ search: (prev) => ({ ...prev, post: post.postId }) }) }
-      else if (code === 'KeyS' && e.shiftKey && currentUserId) { e.preventDefault(); saveMutation.mutate() }
+      else if (code === 'KeyS' && e.shiftKey) { e.preventDefault(); if (requireAuth('save')) saveMutation.mutate() }
       else if (code === 'KeyS' && !e.shiftKey) { e.preventDefault(); handleShare() }
     }
 
@@ -1075,17 +1091,15 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {currentUserId && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => saveMutation.mutate()}
-              isPending={saveMutation.isPending}
-              className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
-              title={saved ? 'Unsave post' : 'Save post'}>
-              <Bookmark className="w-4 h-4" fill={saved ? 'currentColor' : 'none'} />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { if (requireAuth('save')) saveMutation.mutate() }}
+            isPending={saveMutation.isPending}
+            className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+            title={saved ? 'Unsave post' : 'Save post'}>
+            <Bookmark className="w-4 h-4" fill={saved ? 'currentColor' : 'none'} />
+          </Button>
           {profileId && (currentUserId === author?.userId || canPinPost) && (
             <Button
               variant="ghost"
@@ -1107,26 +1121,28 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
               title="Delete post">
               <Trash2 className="w-4 h-4" />
             </Button>
-          ) : currentUserId && (
+          ) : (
             <>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowReportDialog(true)}
+                onClick={() => { if (requireAuth('report')) setShowReportDialog(true) }}
                 className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
                 title="Report post">
                 <Flag className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => blockMutation.mutate()}
-                isPending={blockMutation.isPending}
-                disabled={blocked}
-                className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
-                title={blocked ? 'Blocked' : 'Block user'}>
-                <Ban className="w-4 h-4" />
-              </Button>
+              {currentUserId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => blockMutation.mutate()}
+                  isPending={blockMutation.isPending}
+                  disabled={blocked}
+                  className="text-text-s hover:text-text-h rounded-full w-7 h-7 p-0 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
+                  title={blocked ? 'Blocked' : 'Block user'}>
+                  <Ban className="w-4 h-4" />
+                </Button>
+              )}
               {canDeleteContent && (
                 <Button
                   variant="ghost"
@@ -1365,6 +1381,12 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
           </ul>
         )}
       </Modal>
+
+      <LoginPromptModal
+        isOpen={showLoginPrompt}
+        onClose={() => setShowLoginPrompt(false)}
+        action={loginPromptAction}
+      />
     </motion.article>
   )
 }

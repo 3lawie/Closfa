@@ -106,10 +106,24 @@ export function PostModal() {
               Comments ({post.comments})
             </h3>
 
-            {session && (
+            {session ? (
               <div className="mb-8">
                 <CommentComposer postId={postId!} currentUserName={session.name} />
               </div>
+            ) : (
+              <a
+                href="/api/auth/login"
+                className="mb-8 flex items-center gap-3 p-4 rounded-lg border border-accent-border bg-accent-bg/50 hover:bg-accent-bg transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)] group"
+              >
+                <div className="w-9 h-9 rounded-full bg-accent-bg flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-4 h-4 text-accent" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-text-h">Join the conversation</p>
+                  <p className="text-xs text-text-s">Log in to comment and reply to this post.</p>
+                </div>
+                <span className="text-xs font-semibold text-accent group-hover:underline shrink-0">Log in →</span>
+              </a>
             )}
 
             <div className="flex flex-col gap-6 divide-y divide-border border-opacity-50">

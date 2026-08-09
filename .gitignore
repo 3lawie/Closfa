@@ -8,18 +8,32 @@ pnpm-debug.log*
 lerna-debug.log*
 Readme.local.*
 
-
+# Dependencies
 node_modules
+
+# Build output
 dist
 dist-ssr
+
+# Cloudflare
 .wrangler
-*.local
 .dev.vars
-.claude/hooks/.state
+
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Large media (too big for Cloudflare Workers 25 MiB asset limit)
+videos/
+*.mp4
+*.mov
+*.avi
+*.mkv
 
 # Editor directories and files
 .vscode/*
-videos/
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -28,10 +42,11 @@ videos/
 *.njsproj
 *.sln
 *.sw?
-.env
-.env.*
-!.env.example
+
+# Project-specific
+.claude/hooks/.state
 closfa.zip
 /to\ read/
+
 # Temporary Vite config bundles
 app.config.timestamp_*
