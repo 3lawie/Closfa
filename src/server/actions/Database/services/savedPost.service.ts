@@ -5,6 +5,7 @@ import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { queries } from '@/server/queries'
+import { logger } from '@/server/lib/logger'
 
 const toggleSavePostInput = z.object({ postId: z.string().min(1) })
 
@@ -32,7 +33,7 @@ export const toggleSavePostFn = createServerFn({ method: 'POST' })
 
       return { ok: true as const, data: { saved: added.length > 0 } }
     } catch (err) {
-      console.error('[toggleSavePostFn] Failed:', err)
+      logger.error('toggleSavePost failed', { scope: 'savedPost.service' }, err instanceof Error ? err : undefined)
       return {
         ok: false as const,
         error: 'INTERNAL_ERROR' as const,

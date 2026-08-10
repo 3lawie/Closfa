@@ -17,6 +17,7 @@ jobs:
       VITE_PUBLIC_IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/ci"
       VITE_PUBLIC_AUTH0_DOMAIN: "ci-placeholder.auth0.com"
       VITE_PUBLIC_AUTH0_CLIENT_ID: "ci-placeholder"
+      VITE_PUBLIC_SITE_URL: "https://closfa.mly445032.workers.dev"
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js
@@ -28,12 +29,12 @@ jobs:
         run: npm ci
       # Hard gates: typecheck + tests must pass.
       - name: TypeScript check
-        run: npx tsc --noEmit
+        run: npm run typecheck
       - name: Test
         run: npm run test
-      # Lint is currently non-blocking: the repo carries ~21 pre-existing lint
-      # errors (mostly documented Drizzle-beta `as any` casts). Flip to a hard
-      # gate once that backlog is cleared so new violations can't sneak in.
-      - name: Lint (non-blocking until backlog cleared)
+      # Now a hard gate. The lint backlog this used to tolerate (46 errors, the
+      # bulk of them documented Drizzle-beta `as any` casts) has been cleared —
+      # the genuinely unavoidable ones are scoped in eslint.config.js instead of
+      # being tolerated repo-wide, so anything new that appears here is real.
+      - name: Lint
         run: npm run lint
-        continue-on-error: true

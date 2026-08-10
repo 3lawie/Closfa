@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 // Tailwind v4 default breakpoints
 const BREAKPOINTS = {
@@ -12,34 +12,51 @@ const BREAKPOINTS = {
 type Breakpoint = keyof typeof BREAKPOINTS
 
 /**
- * useMediaQuery — subscribes to a CSS media query.
- * Returns true when the query matches, false otherwise.
+ * Subscribes to a CSS media query. True when it matches.
  *
- * Usage:
  *   const isDesktop = useMediaQuery('lg')
  *   const isCustom = useMediaQuery('(max-width: 900px)')
+ *
+ * Built on useSyncExternalStore rather than useState + useEffect. The previous
+ * version called setState synchronously inside its effect to catch up with the
+ * real match state after mounting, which is a cascading extra render on every
+ * consumer. useSyncExternalStore expresses the same thing directly: subscribe
+ * to matchMedia, read the live value, and hand SSR an explicit `false`.
+ *
+ * That server snapshot is a real constraint, not an implementation detail: the
+ * first client render must agree with the server, so any layout that branches
+ * on this will flash the desktop variant before correcting. Prefer a CSS
+ * breakpoint whenever the choice is purely visual; reach for this only when the
+ * behaviour, not the styling, has to differ.
  */
 export function useMediaQuery(query: Breakpoint | string): boolean {
-  const mediaQuery = query in BREAKPOINTS
-    ? BREAKPOINTS[query as Breakpoint]
-    : query
+  const mediaQuery = query in BREAKPOINTS ? BREAKPOINTS[query as Breakpoint] : query
 
-  // Start with false to avoid SSR hydration mismatch
-  const [matches, setMatches] = useState(false)
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const mql = window.matchMedia(mediaQuery)
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    },
+    [mediaQuery],
+  )
 
-  useEffect(() => {
-    const mql = window.matchMedia(mediaQuery)
-    setMatches(mql.matches)
-
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [mediaQuery])
-
-  return matches
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(mediaQuery).matches,
+    () => false,
+  )
 }
 
 /** Convenience hooks for common breakpoints */
 export const useIsMobile = () => !useMediaQuery('md')
-export const useIsTablet = () => useMediaQuery('md') && !useMediaQuery('lg')
 export const useIsDesktop = () => useMediaQuery('lg')
+
+export function useIsTablet(): boolean {
+  // Both calls must be unconditional. Written as `useMediaQuery('md') &&
+  // !useMediaQuery('lg')` the second was short-circuited away whenever the
+  // first was false, so the hook order changed between renders.
+  const atLeastMd = useMediaQuery('md')
+  const atLeastLg = useMediaQuery('lg')
+  return atLeastMd && !atLeastLg
+}

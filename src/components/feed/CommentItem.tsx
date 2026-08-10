@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatRelativeTime } from '@/lib/utils/format'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { clientEnv } from '@/lib/env/client-env'
 import { cn } from '@/lib/utils/cn'
 import { toast } from '@/components/ui/Toast'
+import { useOptimisticLike } from '@/lib/hooks/useOptimisticLike'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Trash2 } from 'lucide-react'
 
@@ -27,7 +28,7 @@ interface CommentReply {
   user_id: string
 }
 
-interface CommentData {
+export interface CommentData {
   comment_id: string
   comment: string
   createdAt: Date | string | null
@@ -64,29 +65,16 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
   const [showReplies, setShowReplies] = useState(true)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingReplyId, setDeletingReplyId] = useState<string | null>(null)
-  const [liked, setLiked] = useState(false)
-  const [localLikes, setLocalLikes] = useState(comment.comment_likes)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [pendingReplyDeleteId, setPendingReplyDeleteId] = useState<string | null>(null)
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const replyDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const queryClient = useQueryClient()
 
-  const likeMutation = useMutation({
-    mutationFn: () => toggleCommentLike({ data: { commentId: comment.comment_id } }),
-    onMutate: () => {
-      const snapshot = { liked, likes: localLikes }
-      setLiked((v) => !v)
-      setLocalLikes((n) => (liked ? Math.max(0, n - 1) : n + 1))
-      return snapshot
-    },
-    onError: (_err, _vars, snapshot) => {
-      if (snapshot) { setLiked(snapshot.liked); setLocalLikes(snapshot.likes) }
-    },
-    onSuccess: (res) => {
-      if (res.ok) { setLiked(res.data.liked); setLocalLikes(res.data.likes) }
-    },
-  })
+  const { liked, likes: localLikes, toggle: toggleLike } = useOptimisticLike(
+    () => toggleCommentLike({ data: { commentId: comment.comment_id } }),
+    comment.comment_likes,
+  )
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteComment({ data: { commentId: comment.comment_id } }),
@@ -111,6 +99,14 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
       toast('Failed to delete reply', { variant: 'danger' })
     }
   })
+
+  // The pending deletes are fire-and-forget by design — navigating away during
+  // the undo window still deletes, which is what "deleted, unless you undo"
+  // means. This only stops the timers from outliving the component.
+  useEffect(() => () => {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
+    if (replyDeleteTimerRef.current) clearTimeout(replyDeleteTimerRef.current)
+  }, [])
 
   function handleConfirmDelete() {
     setShowDeleteConfirm(false)
@@ -150,7 +146,10 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
 
   if (pendingDelete) return null
 
-  const replies = comment.replies ?? []
+  // A reply awaiting its undo window is hidden optimistically, the same way
+  // `pendingDelete` hides the whole comment — without this the row stays on
+  // screen for five seconds after the user confirmed deleting it.
+  const replies = (comment.replies ?? []).filter((r) => r.reply_id !== pendingReplyDeleteId)
 
   return (
     <div id={`comment-${comment.comment_id}`} className="group">
@@ -180,7 +179,7 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
           {/* Actions */}
           <div className="flex items-center gap-4 text-xs font-semibold text-text-s mb-2">
             <button
-              onClick={() => currentUserId && !likeMutation.isPending && likeMutation.mutate()}
+              onClick={() => currentUserId && toggleLike()}
               disabled={!currentUserId}
               className={cn(
                 "flex items-center gap-1 transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]",
@@ -265,18 +264,18 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
       <ConfirmDialog
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={() => deleteMutation.mutate()}
+        onConfirm={handleConfirmDelete}
         title="Delete this comment?"
-        description="This cannot be undone — its replies will be deleted too."
+        description="Its replies will be deleted too. You'll have a few seconds to undo."
         confirmLabel="Delete comment"
         isPending={deleteMutation.isPending}
       />
       <ConfirmDialog
         isOpen={deletingReplyId !== null}
         onClose={() => setDeletingReplyId(null)}
-        onConfirm={() => { if (deletingReplyId) deleteReplyMutation.mutate(deletingReplyId) }}
+        onConfirm={handleConfirmReplyDelete}
         title="Delete this reply?"
-        description="This cannot be undone."
+        description="You'll have a few seconds to undo."
         confirmLabel="Delete reply"
         isPending={deleteReplyMutation.isPending}
       />
@@ -287,24 +286,10 @@ export function CommentItem({ comment, currentUserId, currentUserName }: { comme
 // Owns its own like state — each reply toggles independently rather than
 // CommentItem tracking a like/count map for every reply in the thread.
 function ReplyRow({ reply, currentUserId, onDelete }: { reply: CommentReply, currentUserId?: string, onDelete: () => void }) {
-  const [liked, setLiked] = useState(false)
-  const [localLikes, setLocalLikes] = useState(reply.comment_likes)
-
-  const likeMutation = useMutation({
-    mutationFn: () => toggleReplyLike({ data: { replyId: reply.reply_id } }),
-    onMutate: () => {
-      const snapshot = { liked, likes: localLikes }
-      setLiked((v) => !v)
-      setLocalLikes((n) => (liked ? Math.max(0, n - 1) : n + 1))
-      return snapshot
-    },
-    onError: (_err, _vars, snapshot) => {
-      if (snapshot) { setLiked(snapshot.liked); setLocalLikes(snapshot.likes) }
-    },
-    onSuccess: (res) => {
-      if (res.ok) { setLiked(res.data.liked); setLocalLikes(res.data.likes) }
-    },
-  })
+  const { liked, likes: localLikes, toggle: toggleLike } = useOptimisticLike(
+    () => toggleReplyLike({ data: { replyId: reply.reply_id } }),
+    reply.comment_likes,
+  )
 
   return (
     <div id={`comment-${reply.reply_id}`} className="relative flex items-start gap-3 group/reply">
@@ -335,7 +320,7 @@ function ReplyRow({ reply, currentUserId, onDelete }: { reply: CommentReply, cur
           {reply.comment}
         </p>
         <button
-          onClick={() => currentUserId && !likeMutation.isPending && likeMutation.mutate()}
+          onClick={() => currentUserId && toggleLike()}
           disabled={!currentUserId}
           className={cn(
             "flex items-center gap-1 text-xs font-semibold transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)]",

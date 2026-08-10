@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface UseInfiniteScrollOptions {
   /** Called when the sentinel element enters the viewport */
@@ -32,7 +32,12 @@ export function useInfiniteScroll({
 }: UseInfiniteScrollOptions) {
   const sentinelRef = useRef<HTMLDivElement>(null)
 
-  const stableOnLoadMore = useCallback(onLoadMore, [onLoadMore])
+  // `useCallback(onLoadMore, [onLoadMore])` was a no-op — it returns a new
+  // identity exactly when the input changes, so it stabilised nothing while
+  // still re-creating the IntersectionObserver on every caller re-render.
+  // A ref holds the latest callback without being an effect dependency.
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -41,7 +46,7 @@ export function useInfiniteScroll({
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !isLoading) {
-          stableOnLoadMore()
+          onLoadMoreRef.current()
         }
       },
       {
@@ -51,7 +56,7 @@ export function useInfiniteScroll({
 
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasMore, isLoading, stableOnLoadMore, threshold])
+  }, [hasMore, isLoading, threshold])
 
   return { sentinelRef }
 }

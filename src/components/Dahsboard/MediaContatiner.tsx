@@ -164,7 +164,9 @@ export const MediaContatiner = forwardRef<MediaContainerHandle>(function MediaCo
                 toast(`File ${file.name} must be less than 12MB`, { variant: 'danger' })
                 continue
             }
-            if (!ALLOWED_MEDIA_TYPES.includes(file.type as any)) {
+            // readonly tuple .includes() narrows its argument to the union,
+            // so an arbitrary string needs widening — not the value silenced.
+            if (!(ALLOWED_MEDIA_TYPES as readonly string[]).includes(file.type)) {
                 toast(`File type ${file.type} is not supported.`, { variant: 'danger' })
                 continue
             }

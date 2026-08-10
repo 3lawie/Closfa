@@ -25,6 +25,7 @@ import crypto from 'crypto'
 import { z } from 'zod'
 import { authMiddleware, rateLimiterMiddleWare } from '@/server/lib/middleware'
 import { verifyImageKitUpload } from './imagekit.verify'
+import { ok, err, type ServerResult } from '@/server/lib/result'
 
 type AuthResult = {
   token: string
@@ -64,18 +65,19 @@ function issueAuth(privateKey: string): AuthResult {
 export const getImageKitAuth = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
   .inputValidator(fileMetadataInput)
-  .handler(async ({ data }: { data: FileMetadataInput }): Promise<AuthResult> => {
+  .handler(async ({ data }: { data: FileMetadataInput }): Promise<ServerResult<AuthResult>> => {
     const check = verifyImageKitUpload(data)
-    if (!check.ok) {
-      throw new Error(check.message)
-    }
+    // "wrong file type" / "too large" is an expected outcome of user input, so
+    // it travels through the ok:false arm (invariant 4). It used to be thrown,
+    // which reached the client as a generic 500 with no usable message.
+    if (!check.ok) return err('BAD_REQUEST', check.message)
 
     const privateKey = process.env.IMAGEKIT_PRIVATE_KEY
-    if (!privateKey) {
-      throw new Error('IMAGEKIT_PRIVATE_KEY is not set')
-    }
+    // A missing secret is genuine misconfiguration, not a user error — still a
+    // throw, deliberately.
+    if (!privateKey) throw new Error('IMAGEKIT_PRIVATE_KEY is not set')
 
-    return issueAuth(privateKey)
+    return ok(issueAuth(privateKey))
   })
 
 /** Same as {@link getImageKitAuth}, but for every file in a post at once —
@@ -90,20 +92,24 @@ const batchInput = z.object({
 export const getImageKitAuthBatch = createServerFn({ method: 'POST' })
   .middleware([authMiddleware, rateLimiterMiddleWare])
   .inputValidator(batchInput)
-  .handler(async ({ data }): Promise<AuthResult[]> => {
+  .handler(async ({ data }): Promise<ServerResult<AuthResult[]>> => {
     const privateKey = process.env.IMAGEKIT_PRIVATE_KEY
     if (!privateKey) {
       throw new Error('IMAGEKIT_PRIVATE_KEY is not set')
     }
 
-    // Same all-or-nothing behavior as calling getImageKitAuth per file used
-    // to have: one bad file throws and aborts the whole batch, just from a
-    // single round trip instead of N.
-    return data.files.map((file) => {
+    // Still all-or-nothing: one rejected file fails the whole batch, so the
+    // client never uploads a partial set. It now reports which file and why
+    // instead of throwing an opaque 500.
+    const rejections: string[] = []
+    for (const file of data.files) {
       const check = verifyImageKitUpload(file)
-      if (!check.ok) {
-        throw new Error(`${file.fileName}: ${check.message}`)
-      }
-      return issueAuth(privateKey)
-    })
+      // Narrowed inside the loop — VerifyResult's ok:true arm carries no
+      // `message`, so the discriminant has to be checked before reading it.
+      if (!check.ok) rejections.push(`${file.fileName}: ${check.message}`)
+    }
+
+    if (rejections.length > 0) return err('BAD_REQUEST', rejections.join('; '))
+
+    return ok(data.files.map(() => issueAuth(privateKey)))
   })

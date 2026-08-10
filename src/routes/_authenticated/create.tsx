@@ -128,11 +128,17 @@ function CreatePost() {
                     jobs.push({ kind: 'thumb', parentIndex: i, blob: p.stored.thumbnailBlob, fileName: `${p.fileName}.thumb.webp`, mimeType: 'image/webp' })
                 }
             })
-            const authTokens = jobs.length > 0
-                ? await getImageKitAuthBatch({
+            let authTokens: { token: string; signature: string; expire: number }[] = []
+            if (jobs.length > 0) {
+                const authRes = await getImageKitAuthBatch({
                     data: { files: jobs.map((j) => ({ mimeType: j.mimeType, fileSizeBytes: j.blob.size, fileName: j.fileName })) },
                 })
-                : []
+                // All-or-nothing by design: a rejected file aborts the batch so
+                // the post never publishes with a partial media set. The message
+                // names the offending file.
+                if (!authRes.ok) throw new Error(authRes.message)
+                authTokens = authRes.data
+            }
             setProgress(15)
 
             // Stage 3 (15-90%): every upload in parallel, each contributing

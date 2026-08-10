@@ -20,6 +20,9 @@ export function sanitizeReturnTo(raw: string | null | undefined): string | null 
   // Reject ASCII control chars FIRST: the WHATWG URL parser strips tab/CR/LF
   // before parsing, so `/\t/evil.com` passes the relative-path checks below
   // yet the browser resolves it cross-origin from the Location header.
+  // Matching control characters is the entire point of this guard; the rule
+  // exists to catch the ones written by accident.
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001F\u007F]/.test(raw)) return null
   if (!raw.startsWith('/')) return null
   if (raw.startsWith('//')) return null

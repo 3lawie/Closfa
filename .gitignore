@@ -48,5 +48,15 @@ videos/
 closfa.zip
 /to\ read/
 
+# Vendored skill source — kept locally for authoring, never shipped to git or
+# Cloudflare. It is a third-party plugin repo, not part of the app.
+superpowers-main/
+
+# Throwaway probe scripts. These historically carried live DB/ImageKit
+# credentials; keep them out of the repo permanently.
+check_post.mjs
+test_*.mjs
+test_*.avif
+
 # Temporary Vite config bundles
 app.config.timestamp_*

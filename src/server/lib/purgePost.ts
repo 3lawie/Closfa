@@ -2,6 +2,7 @@ import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { and, eq, inArray, isNotNull, lte } from 'drizzle-orm'
 import { logger } from './logger'
+import { deleteImageKitAssets } from '@/server/actions/ThirdParty/ImageKit/imagekit.delete'
 
 /**
  * Hard-deletes a post and every row that FK-references it, in dependency
@@ -13,10 +14,16 @@ import { logger } from './logger'
  * adminCompleteDeletePostFn in post.service.ts, and the daily cron in
  * worker-entry.ts) — never call this directly on a still-live post.
  *
- * `media` rows and any `report`/`notification` rows referencing this post are
- * deliberately left alone — neither has a real FK to `post`, so a stale
- * reference is harmless and matches how the app already tolerates loose
- * references elsewhere (report.targetId, notification.entityId).
+ * `report`/`notification` rows referencing this post are deliberately left
+ * alone — neither has a real FK to `post`, so a stale reference is harmless and
+ * matches how the app already tolerates loose references elsewhere
+ * (report.targetId, notification.entityId).
+ *
+ * `media` rows are NOT in that category and are now cleaned up. Leaving them
+ * meant the uploaded files stayed in ImageKit indefinitely: a storage leak, and
+ * a privacy failure — the CDN URL of a "deleted" post's image kept serving it.
+ * Only media that no *other* post still references is removed, since
+ * post_to_media is many-to-many.
  */
 export async function purgePost(postId: string): Promise<void> {
   const replies = await db
@@ -44,8 +51,55 @@ export async function purgePost(postId: string): Promise<void> {
   await db.delete(schema.postLike).where(eq(schema.postLike.postId, postId))
   await db.delete(schema.postToCategory).where(eq(schema.postToCategory.post_id, postId))
   await db.delete(schema.postToUser).where(eq(schema.postToUser.post_id, postId))
+
+  // Captured BEFORE the join rows go, otherwise there's no way back to them.
+  const attached = await db
+    .select({ mediaId: schema.postToMedia.media_id })
+    .from(schema.postToMedia)
+    .where(eq(schema.postToMedia.post_id, postId))
+  const attachedIds = attached.map((m) => m.mediaId)
+
   await db.delete(schema.postToMedia).where(eq(schema.postToMedia.post_id, postId))
   await db.delete(schema.savedPost).where(eq(schema.savedPost.postId, postId))
+
+  // With this post's join rows gone, anything still referenced belongs to
+  // another post and must survive — post_to_media is many-to-many.
+  if (attachedIds.length > 0) {
+    const stillUsed = await db
+      .select({ mediaId: schema.postToMedia.media_id })
+      .from(schema.postToMedia)
+      .where(inArray(schema.postToMedia.media_id, attachedIds))
+    const keep = new Set(stillUsed.map((m) => m.mediaId))
+    const orphanIds = attachedIds.filter((id) => !keep.has(id))
+
+    if (orphanIds.length > 0) {
+      const orphans = await db
+        .select({
+          mediaId: schema.media.media_id,
+          mediaUrl: schema.media.mediaUrl,
+          thumbnailUrl: schema.media.thumbnailUrl,
+        })
+        .from(schema.media)
+        .where(inArray(schema.media.media_id, orphanIds))
+
+      // A video contributes two ImageKit objects: the file and its frame grab.
+      const paths = orphans.flatMap((m) =>
+        [m.mediaUrl, m.thumbnailUrl].filter((p): p is string => !!p && p.trim() !== ''),
+      )
+
+      // Best-effort and deliberately un-awaited-on-failure: deleteImageKitAssets
+      // never throws, so a CDN outage leaks files rather than leaving a
+      // half-purged post behind. Failures are logged inside.
+      const result = await deleteImageKitAssets(paths)
+      if (result.failed.length > 0) {
+        logger.warn('purgePost: some ImageKit assets were not deleted', {
+          postId, failedCount: result.failed.length, deleted: result.deleted,
+        })
+      }
+
+      await db.delete(schema.media).where(inArray(schema.media.media_id, orphanIds))
+    }
+  }
 
   // Nulled, not deleted — a pinned post being purged should just leave the
   // profile with no pin, not touch the profile row itself.

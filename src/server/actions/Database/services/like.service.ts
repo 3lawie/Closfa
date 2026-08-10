@@ -7,6 +7,7 @@ import { schema } from '@/server/db/schema'
 import { queries } from '@/server/queries'
 import { ok, err, type ServerResult } from '@/server/lib/result'
 import { createNotification } from './notification.service'
+import { logger } from '@/server/lib/logger'
 
 const toggleLikeInput = z.object({ postId: z.string().min(1) })
 
@@ -72,7 +73,7 @@ export const toggleLike = createServerFn({ method: 'POST' })
         .where(eq(schema.post.postId, postId))
       return ok({ liked: true, likes: current[0]?.likes ?? 0 })
     } catch (e) {
-      console.error('[toggleLike] Failed:', e)
+      logger.error('toggleLike failed', { scope: 'like.service' }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to update like')
     }
   })
@@ -94,7 +95,7 @@ export const getPostLikersFn = createServerFn({ method: 'GET' })
         .filter((u): u is PostLiker => u !== null)
       return ok(likers)
     } catch (e) {
-      console.error('[getPostLikers] Failed:', e)
+      logger.error('getPostLikers failed', { scope: 'like.service' }, e instanceof Error ? e : undefined)
       return err('INTERNAL_ERROR', 'Failed to load likers')
     }
   })

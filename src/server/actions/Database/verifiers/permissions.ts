@@ -15,6 +15,7 @@
 import { db } from '@/server/db'
 import { schema } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
+import { w } from '@/server/queries'
 
 export const ROLE_LEVELS = {
   moderator: 1,
@@ -28,17 +29,21 @@ export async function getProfilePermission(
   userId: string,
   profileId: string,
 ) {
-  // Check if user is a member of this profile's mod team
+  // Check if user is a member of this profile's mod team.
+  //
+  // Both filters go through w() — the single documented workaround for the
+  // Drizzle beta's broken relational where-types — rather than a local
+  // `as any`. Worth noting the key asymmetry these casts used to hide:
+  // profileMember's column is `profileId` (schema.ts:314) while profile's is
+  // `profile_id` (schema.ts:132). Getting either wrong compiles fine and
+  // silently returns undefined, i.e. denies permission for no visible reason.
   const membership = await db.query.profileMember.findFirst({
-    where: {
-      profileId,
-      userId,
-    } as any,
+    where: w({ profileId, userId }),
   })
 
   // Check if user is the profile owner
   const profile = await db.query.profile.findFirst({
-    where: { profile_id: profileId } as any,
+    where: w({ profile_id: profileId }),
   })
   const isOwner = profile?.userId === userId
 

@@ -1,5 +1,3 @@
-import { createElement } from "react"
-
 export function getMediaType(mimeType: string): "image" | "video" | "audio" {
     if (mimeType.startsWith("image/")) return "image"
     if (mimeType.startsWith("video/")) return "video"

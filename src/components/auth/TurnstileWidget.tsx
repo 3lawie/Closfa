@@ -10,7 +10,13 @@ interface TurnstileWidgetProps {
 
 declare global {
   interface Window {
-    turnstile?: any
+    // Injected by Cloudflare's challenge script. Only the two methods this
+    // component calls are declared — a bare `any` here would silently accept
+    // any misspelled call on the global.
+    turnstile?: {
+      render: (el: HTMLElement, options: Record<string, unknown>) => string
+      remove: (widgetId: string) => void
+    }
   }
 }
 

@@ -20,7 +20,10 @@ import { safeDisplayName } from '@/lib/utils/format'
 // Exported so services needing a one-off relational-object read (rather than
 // a new queries.ts helper) use this single documented workaround instead of
 // scattering ad hoc `as any` casts around the codebase.
-export const w = (filter: Record<string, unknown>) => filter as any
+// `as never`, not `as any`: never is assignable to every parameter type, so it
+// satisfies whichever where-shape Drizzle infers, without introducing an `any`
+// that would then silently spread into callers' inferred types.
+export const w = (filter: Record<string, unknown>) => filter as never
 
 // Every relational join in this file that pulls in a `user` row (author,
 // actor, comment/reply author, ...) carries `name` straight from the auth

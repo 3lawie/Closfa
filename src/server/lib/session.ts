@@ -74,8 +74,7 @@ export type SessionData = z.infer<typeof SessionData>
  */
 export type PublicSessionData = Pick<SessionData, 'userId' | 'name' | 'nickname'>
 
-export function toPublicSession(session: SessionData): PublicSessionData
-export function toPublicSession(session: SessionData | null): PublicSessionData | null
+
 export function toPublicSession(session: SessionData | null): PublicSessionData | null {
   if (!session) return null
   const { userId, name, nickname } = session
@@ -95,6 +94,7 @@ export type SessionResult = z.infer<typeof SessionResult>
 const COOKIE_NAME = 'closfa_session'
 export { evaluateSessionPayload, SESSION_DURATION_SECONDS } from './session.rules'
 import { evaluateSessionPayload, SESSION_DURATION_SECONDS } from './session.rules'
+import { logger } from '@/server/lib/logger'
 
 /**
  * Derive a 32-byte key from SESSION_SECRET using TextEncoder.
@@ -170,7 +170,7 @@ export const getSession = createServerFn({ method: "GET" })
 
       return { session, status: 'valid' }
     } catch (err) {
-      console.error('[Session Decrypt] Failed:', err)
+      logger.error('Session decrypt failed', { scope: 'session' }, err instanceof Error ? err : undefined)
       // Invalid/tampered/expired token → treat as unauthenticated
       return { session: null, status: 'unauthorized' }
     }

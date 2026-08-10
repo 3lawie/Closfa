@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ImageKitProvider } from '@imagekit/react'
 import { clientEnv } from '../lib/env/client-env'
 import { getSession, toPublicSession } from '@/server/lib/session'
+import { siteOrigin } from '@/lib/share/canonicalUrl'
 import type { QueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -30,6 +31,31 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     // PostModal can scroll to and highlight the specific comment.
     commentId: z.string().optional(),
   }),
+  // Site-wide head defaults. These live here rather than as literal JSX in the
+  // <head> below because route-level `head:` options override root ones per
+  // attribute (deduped on name ?? property, last match wins) — which is how
+  // /post/$postId replaces the title and og:* tags for an individual post.
+  // A hardcoded <title> next to <HeadContent/> would emit two <title>
+  // elements, and the first one wins in every browser and crawler.
+  head: () => ({
+    meta: [
+      { title: 'Closfa' },
+      {
+        name: 'description',
+        content: 'Closfa — an aware-intention social space. Share deliberately, not compulsively.',
+      },
+      { property: 'og:site_name', content: 'Closfa' },
+      { property: 'og:type', content: 'website' },
+      { property: 'og:image', content: `${siteOrigin()}/og-default.png` },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'theme-color', content: '#4aa886' },
+    ],
+    links: [
+      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+      { rel: 'manifest', href: '/site.webmanifest' },
+    ],
+  }),
   component: RootLayout,
 })
 
@@ -50,7 +76,6 @@ function RootLayout() {
       <head>
         <meta charSet="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
-        <title>Closfa</title>
         <link rel="preconnect" href="https://fonts.googleapis.com"/>
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous"/>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>

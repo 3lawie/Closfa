@@ -1,4 +1,4 @@
-import { useState, useTransition, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Link, getRouteApi, useRouter } from '@tanstack/react-router'
 
 // Root-scoped Link for the "open post modal via search param" case — the
@@ -8,7 +8,7 @@ const rootRouteApi = getRouteApi('__root__')
 import { Button } from '@/components/ui/Button'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toggleLike, getPostLikersFn } from '@/server/actions/Database/services/like.service'
-import { deletePost, incrementShareFn } from '@/server/actions/Database/services/post.service'
+import { deletePost } from '@/server/actions/Database/services/post.service'
 import { reportContent } from '@/server/actions/Database/services/moderation.service'
 import { toggleSavePostFn } from '@/server/actions/Database/services/savedPost.service'
 import { blockUserFn } from '@/server/actions/Database/services/block.service'
@@ -25,6 +25,9 @@ import { ImageLightbox } from '@/components/media/ImageLightbox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { LoginPromptModal } from '@/components/auth/LoginPromptModal'
+import { SharePostSheet } from '@/components/share/SharePostSheet'
+import { hasOpenOverlay } from '@/lib/overlay/overlayStack'
+import { useOptimisticLike } from '@/lib/hooks/useOptimisticLike'
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { toast } from '@/components/ui/Toast'
@@ -783,8 +786,8 @@ function ProgressiveImage({ blurSrc, fullSrc, fit = 'cover' }: { blurSrc: string
 
 // ── PostCard ──────────────────────────────────────────────────
 export function PostCard({ post, currentUserId, isFocused = false, profileId, isPinned = false }: { post: Post, currentUserId?: string, isFocused?: boolean, profileId?: string, isPinned?: boolean }) {
-  const [liked, setLiked] = useState(false)
-  const [localLikes, setLocalLikes] = useState(post.likes)
+  const { liked, likes: localLikes, toggle: toggleLikeOptimistic, isPending: likePending } =
+    useOptimisticLike(() => toggleLike({ data: { postId: post.postId } }), post.likes)
   const [localShares, setLocalShares] = useState(post.shares)
   const [expanded, setExpanded] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
@@ -817,22 +820,6 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
     if (isFocused) articleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [isFocused])
 
-  const likeMutation = useMutation({
-    mutationFn: () => toggleLike({ data: { postId: post.postId } }),
-    onMutate: () => {
-      const snapshot = { liked, likes: localLikes }
-      setLiked((v) => !v)
-      setLocalLikes((n: number) => (liked ? Math.max(0, n - 1) : n + 1))
-      return snapshot
-    },
-    onError: (_err, _vars, snapshot) => {
-      if (snapshot) { setLiked(snapshot.liked); setLocalLikes(snapshot.likes) }
-    },
-    onSuccess: (res) => {
-      if (res.ok) { setLiked(res.data.liked); setLocalLikes(res.data.likes) }
-    },
-  })
-
   const reportMutation = useMutation({
     mutationFn: (data: { reason: string, details?: string }) =>
       reportContent({ data: { targetType: 'post', targetId: post.postId, reason: data.reason, details: data.details, turnstileToken: reportTurnstileToken } }),
@@ -848,8 +835,8 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
 
   function handleLike() {
     if (!requireAuth('like')) return
-    if (likeMutation.isPending) return
-    likeMutation.mutate()
+    if (likePending) return
+    toggleLikeOptimistic()
   }
 
   const [showLikersModal, setShowLikersModal] = useState(false)
@@ -911,30 +898,10 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
     },
   })
 
-  const shareMutation = useMutation({
-    mutationFn: () => incrementShareFn({ data: { postId: post.postId } }),
-    onSuccess: () => setLocalShares((n) => n + 1),
-  })
-
-  async function handleShare() {
-    const url = `${window.location.origin}/post/${post.postId}`
-    if (navigator.share) {
-      try {
-        await navigator.share({ url })
-        shareMutation.mutate()
-      } catch { /* user cancelled the share sheet — don't count it */ }
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(url)
-      toast('Link copied to clipboard', { variant: 'success' })
-      shareMutation.mutate()
-    } catch {
-      // Clipboard API unavailable/denied — show the link itself so it can
-      // still be copied by hand; no auto-dismiss so there's time to select it.
-      toast(url, { duration: 0 })
-    }
-  }
+  // Sharing lives in SharePostSheet now — a single button that jumped straight
+  // to the OS share sheet hid copy-link entirely and behaved differently on
+  // every desktop browser that happens to implement navigator.share.
+  const [shareOpen, setShareOpen] = useState(false)
 
   // Per-post keyboard shortcuts — only the focused card (FeedList tracks
   // which one) listens, so pressing "l" doesn't like every post on screen.
@@ -950,6 +917,11 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
     }
 
     function handleKeyDown(e: KeyboardEvent) {
+      // An open overlay owns the keyboard. Without this, pressing L or S while
+      // the likers modal or share sheet is up still liked/shared the card
+      // underneath it, and arrows scrubbed this card's media while the user
+      // was paging through the lightbox.
+      if (hasOpenOverlay()) return
       if (isTypingTarget(e.target)) return
       // Ctrl/Cmd+C to copy selected text is "c" with no shiftKey — without
       // this guard it was indistinguishable from the "open comments"
@@ -978,7 +950,7 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
       else if ((code === 'KeyL' || code === 'KeyK') && !e.shiftKey) { e.preventDefault(); handleLike() }
       else if (code === 'KeyC' && !e.shiftKey) { e.preventDefault(); navigate({ search: (prev) => ({ ...prev, post: post.postId }) }) }
       else if (code === 'KeyS' && e.shiftKey) { e.preventDefault(); if (requireAuth('save')) saveMutation.mutate() }
-      else if (code === 'KeyS' && !e.shiftKey) { e.preventDefault(); handleShare() }
+      else if (code === 'KeyS' && !e.shiftKey) { e.preventDefault(); setShareOpen(true) }
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -1258,7 +1230,9 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
         </rootRouteApi.Link>
 
         <button
-          onClick={handleShare}
+          onClick={() => setShareOpen(true)}
+          aria-label="Share post"
+          aria-haspopup="dialog"
           className="group flex items-center gap-2 text-sm font-semibold text-text-s hover:text-brand transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]"
         >
           <div className="p-1.5 rounded-full group-hover:bg-accent-bg transition-colors duration-[var(--motion-fast)] ease-[var(--motion-ease)]">
@@ -1386,6 +1360,13 @@ export function PostCard({ post, currentUserId, isFocused = false, profileId, is
         isOpen={showLoginPrompt}
         onClose={() => setShowLoginPrompt(false)}
         action={loginPromptAction}
+      />
+
+      <SharePostSheet
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        post={post}
+        onShareCounted={() => setLocalShares((n) => n + 1)}
       />
     </motion.article>
   )

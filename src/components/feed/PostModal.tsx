@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { PostCard } from '@/components/feed/PostCard'
-import { CommentItem } from '@/components/feed/CommentItem'
+import { CommentItem, type CommentData } from '@/components/feed/CommentItem'
 import { CommentComposer } from '@/components/feed/CommentComposer'
 import { getPostFn, recordPostViewFn } from '@/server/actions/Database/services/post.service'
 import { logSearchClickFn } from '@/server/actions/Database/services/feed.service'
@@ -84,7 +84,12 @@ export function PostModal() {
   }
 
   return (
-    <Modal isOpen={!!postId} onClose={handleClose}>
+    // backToClose={false}: this modal already owns a real history entry (the
+    // `?post=` search param), so Back closes it via the router. Letting Modal
+    // push its own sentinel on top would mean the first Back pops the sentinel,
+    // handleClose fires a replace:true navigation that swallows the `?post=`
+    // entry, and the user needs a second, apparently dead, Back press.
+    <Modal isOpen={!!postId} onClose={handleClose} backToClose={false}>
       {isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -128,7 +133,7 @@ export function PostModal() {
 
             <div className="flex flex-col gap-6 divide-y divide-border border-opacity-50">
               {post.commentsList && post.commentsList.length > 0 ? (
-                post.commentsList.map((comment: any) => (
+                (post.commentsList as unknown as CommentData[]).map((comment) => (
                   <div className="pt-6 first:pt-0" key={comment.comment_id}>
                     <CommentItem comment={comment} currentUserId={session?.userId} currentUserName={session?.name} />
                   </div>

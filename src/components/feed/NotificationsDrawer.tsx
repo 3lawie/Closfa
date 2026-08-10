@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getNotificationsFn, markAllAsReadFn, markAsReadFn } from '@/server/actions/Database/services/notification.service'
 import { formatRelativeTime } from '@/lib/utils/format'
 import { cn } from '@/lib/utils/cn'
+import { useOverlay } from '@/lib/hooks/useOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Heart,
@@ -53,13 +54,21 @@ export function NotificationsDrawer() {
 
   const handleClose = () => {
     navigate({
-      search: (prev) => {
-        const { notifications: _notifications, ...rest } = prev
+      // Drop the key entirely rather than setting it to undefined, so the
+      // closed state leaves no `?notifications=` residue in the URL.
+      search: ({ notifications, ...rest }) => {
+        void notifications
         return rest
       },
       replace: true,
     })
   }
+
+  // Hand-rolled drawer rather than a Modal, so it registers with the overlay
+  // stack directly. backToClose is false because `?notifications=` is already a
+  // router history entry. It gains Escape-to-close and a scroll lock here,
+  // neither of which it had before.
+  useOverlay({ isOpen, onClose: handleClose, backToClose: false })
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -159,7 +168,12 @@ export function NotificationsDrawer() {
                         {n.message || `interacted with your content`}
                       </p>
                       <p className="text-xs text-text-s mt-2 font-medium opacity-70">
-                        {formatRelativeTime(new Date(n.createdAt ?? Date.now()))}
+                        {/* formatRelativeTime already normalises Date | string |
+                            number | null, so the old `new Date(x ?? Date.now())`
+                            wrapper was both redundant and an impure call during
+                            render — a missing timestamp rendered as "just now"
+                            rather than as nothing. */}
+                        {formatRelativeTime(n.createdAt)}
                       </p>
                     </div>
 

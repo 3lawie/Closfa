@@ -6,6 +6,7 @@ import { searchPostsFn } from '@/server/actions/Database/services/feed.service'
 import { PostCard } from '@/components/feed/PostCard'
 import type { Post } from '@/lib/entities/Post'
 import { Search, Loader2, AlertTriangle } from 'lucide-react'
+import { logger } from '@/server/lib/logger'
 
 export const Route = createFileRoute('/search')({
   validateSearch: z.object({ q: z.string().optional() }),
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/search')({
       // an empty result set. initialResults stays null either way; the
       // client-side query below re-fetches and surfaces its own error
       // state for the UI to branch on.
-      console.error('[search] loader query failed:', err)
+      logger.error('search loader query failed', { scope: 'search.route' }, err instanceof Error ? err : undefined)
       return { session: context.session, initialResults: null }
     }
   },

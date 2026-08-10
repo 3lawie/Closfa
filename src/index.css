@@ -156,6 +156,14 @@
 }
 
 /* ── Base Styles ────────────────────────────────────────────── */
+html {
+  /* Reserve the scrollbar track permanently. Opening an overlay locks body
+     scrolling, and without this the vanishing scrollbar shifts the whole page
+     sideways by its width. Cheaper and steadier than measuring the gap in JS
+     and compensating with padding-right. */
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background-color: var(--bg);

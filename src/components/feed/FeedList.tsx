@@ -10,6 +10,16 @@ import {
   getFollowingFeedFn,
 } from '@/server/actions/Database/services/feed.service'
 import type { FeedPage } from '@/lib/entities/Post'
+
+/**
+ * The following-feed's compound cursor. useInfiniteQuery types `pageParam` as
+ * `unknown` unless the whole query is generically annotated, so this names the
+ * shape once instead of casting each field through `any` at the call site.
+ */
+interface FeedCursor {
+  cursor?: string
+  direction?: 'older' | 'newer'
+}
 import type { PublicSessionData } from '@/server/lib/session'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Feather, X } from 'lucide-react'
@@ -74,8 +84,8 @@ export function FeedList({ session, initialFeedPage }: FeedListProps) {
     queryFn: ({ pageParam }) =>
       getFollowingFeedFn({
         data: {
-          cursor: (pageParam as any)?.cursor as string | undefined,
-          direction: (pageParam as any)?.direction as 'older' | 'newer' | undefined,
+          cursor: (pageParam as FeedCursor | undefined)?.cursor,
+          direction: (pageParam as FeedCursor | undefined)?.direction,
           limit: 15
         }
       }),

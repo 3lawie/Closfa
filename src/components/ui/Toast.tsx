@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { useIsMounted } from '@/lib/hooks/useIsMounted'
 
 type ToastVariant = 'default' | 'success' | 'danger'
 
@@ -74,15 +75,11 @@ export function Toaster() {
   // guaranteed mismatch was exactly what caused React's hydration-mismatch
   // warning. `mounted` instead starts false on both server and the client's
   // first pass, only flipping true in an effect (client-only, post-hydration).
-  const [mounted, setMounted] = useState(false)
+  const mounted = useIsMounted()
 
   useEffect(() => {
     listeners.push(setItems)
     return () => { listeners = listeners.filter((l) => l !== setItems) }
-  }, [])
-
-  useEffect(() => {
-    setMounted(true)
   }, [])
 
   if (!mounted) return null

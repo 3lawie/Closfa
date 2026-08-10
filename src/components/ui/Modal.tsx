@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useId, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils/cn'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { useOverlay } from '@/lib/hooks/useOverlay'
+import { useFocusTrap } from '@/lib/hooks/useFocusTrap'
+import { useIsMounted } from '@/lib/hooks/useIsMounted'
 
 interface ModalProps {
   isOpen: boolean
@@ -10,37 +13,31 @@ interface ModalProps {
   children: React.ReactNode
   className?: string
   title?: string
+  /**
+   * Push a history entry so the phone's Back button closes this modal.
+   * Set false for modals that are already driven by a URL search param
+   * (PostModal) — the router owns their history entry already.
+   * @default true
+   */
+  backToClose?: boolean
 }
 
-export function Modal({ isOpen, onClose, children, className, title }: ModalProps) {
+export function Modal({ isOpen, onClose, children, className, title, backToClose = true }: ModalProps) {
   // Same SSR/hydration-mismatch fix as Toast.tsx's Toaster and
   // ConfirmDialog — any caller that mounts this unconditionally (isOpen just
   // toggling visibility) hit a guaranteed server/client first-render mismatch
   // with the old `typeof document === 'undefined'` check.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  const mounted = useIsMounted()
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => { document.body.style.overflow = '' }
-  }, [isOpen])
+  // Escape, the Back button, and the body-scroll lock all come from the shared
+  // overlay stack now. They used to be three local effects here, which meant
+  // one Escape press closed every stacked overlay at once and a nested
+  // lightbox's unmount unlocked scrolling behind this still-open modal.
+  useOverlay({ isOpen, onClose, backToClose })
 
-  useEffect(() => {
-    const handleCancel = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    if (isOpen) {
-      document.addEventListener('keydown', handleCancel)
-    }
-    return () => document.removeEventListener('keydown', handleCancel)
-  }, [isOpen, onClose])
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef, { active: isOpen && mounted })
+  const titleId = useId()
 
   if (!mounted) return null
 
@@ -53,11 +50,17 @@ export function Modal({ isOpen, onClose, children, className, title }: ModalProp
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
+            aria-hidden="true"
             // Fixed dark scrim, deliberately NOT the swappable bg token — a
             // backdrop must stay dark regardless of light/dark mode or theme.
             className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer"
           />
           <motion.div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            {...(title ? { 'aria-labelledby': titleId } : {})}
+            tabIndex={-1}
             initial={{ scale: 0.95, y: 20, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, y: 20, opacity: 0 }}
@@ -69,7 +72,7 @@ export function Modal({ isOpen, onClose, children, className, title }: ModalProp
           >
             <header className="flex items-center justify-between p-4 px-6 border-b border-border bg-surface-translucent backdrop-blur-md sticky top-0 z-10 shrink-0">
               {title ? (
-                <h2 className="text-lg font-bold text-text-h">{title}</h2>
+                <h2 id={titleId} className="text-lg font-bold text-text-h">{title}</h2>
               ) : <div/>}
               <button
                 onClick={onClose}

@@ -158,7 +158,7 @@ function ProfilePage() {
           <h3 className="text-xl font-bold text-text mb-6 px-2 sm:px-0">Posts</h3>
           <div className="flex flex-col">
             {posts.length > 0 ? (
-              posts.map((post: any, i: number) => (
+              (posts as unknown as Post[]).map((post, i) => (
                 <motion.div
                   key={post.postId}
                   initial={{ opacity: 0, y: 10 }}

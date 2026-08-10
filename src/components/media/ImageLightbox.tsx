@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronLeft, ChevronRight, Sparkles, Loader2, Image as ImageIcon, Layers } from 'lucide-react'
 import { clientEnv } from '@/lib/env/client-env'
 import { toast } from '@/components/ui/Toast'
+import { useOverlay } from '@/lib/hooks/useOverlay'
 
 interface ImageLightboxProps {
   /** Raw ImageKit paths (not pre-built URLs) — the lightbox builds its own
@@ -71,27 +72,38 @@ export function ImageLightbox({ images, startIndex = 0, initialFormat = 'avif', 
   // Switching images always resets to the post's chosen default — format
   // choices are per-image, opt-in requests, not something that should carry
   // over from one image in the slider to the next.
-  useEffect(() => {
+  //
+  // Adjusted during render rather than in an effect. React explicitly supports
+  // this for "reset state when a value changes": it re-renders this component
+  // immediately, before committing anything to the DOM, so there's no visible
+  // frame showing the previous image's format. The effect version painted the
+  // stale state first and then corrected it.
+  const [lastIndex, setLastIndex] = useState(index)
+  if (index !== lastIndex) {
+    setLastIndex(index)
     setFormat(defaultFormat)
     setVisibleSrc(formatSrc(images[index], defaultFormat))
     setLoadingFormat(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, images])
+  }
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [])
+  // The preview is a real "place" as far as the user is concerned, so the
+  // phone's Back button should return them to the post rather than leave the
+  // page. That, Escape, and the scroll lock are all the overlay stack's job —
+  // this component used to clear body.overflow unconditionally on unmount,
+  // which unlocked scrolling behind the post modal it was opened from.
+  const { isTopmost } = useOverlay({ isOpen: true, onClose })
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      // PostCard binds the same arrows on `document` to seek its media grid.
+      // Without this the underlying post scrubs along with the lightbox.
+      if (!isTopmost()) return
       if (e.key === 'ArrowRight') setIndex((i) => Math.min(i + 1, images.length - 1))
       if (e.key === 'ArrowLeft') setIndex((i) => Math.max(i - 1, 0))
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [images.length, onClose])
+  }, [images.length, isTopmost])
 
   if (typeof document === 'undefined') return null
 

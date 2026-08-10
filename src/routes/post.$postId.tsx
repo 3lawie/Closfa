@@ -5,16 +5,66 @@ import { useEffect } from 'react'
 const rootRouteApi = getRouteApi('__root__')
 import { getPostFn, recordPostViewFn } from '@/server/actions/Database/services/post.service'
 import { PostCard } from '@/components/feed/PostCard'
-import { CommentItem } from '@/components/feed/CommentItem'
+import { CommentItem, type CommentData } from '@/components/feed/CommentItem'
 import { CommentComposer } from '@/components/feed/CommentComposer'
 import type { Post } from '@/lib/entities/Post'
 import { ArrowLeft } from 'lucide-react'
+import { ogImageUrl, postUrl } from '@/lib/share/canonicalUrl'
+import { buildShareDescription, buildShareTitle } from '@/lib/share/shareMeta'
 
 export const Route = createFileRoute('/post/$postId')({
   loader: async ({ params, context }) => {
     // Session comes from root-route context (decrypted once per navigation).
     const post = await getPostFn({ data: { postId: params.postId } }).catch(() => null)
     return { session: context.session, post }
+  },
+  // What actually makes a shared link worth sharing. Without this the page
+  // inherits the root's generic title and default image, so every post unfurled
+  // identically — and blankly — on X, WhatsApp, Slack and Facebook.
+  head: ({ loaderData, params }) => {
+    // loaderData is genuinely optional in this context (preload passes, error
+    // boundaries), not defensive padding.
+    //
+    // The cast is the same one the component body does below, for the same
+    // reason: the Drizzle beta collapses nested relational results to a loose
+    // union (see the note at server/queries.ts:68). Narrowing once here beats
+    // repeating it at each of the three helper calls.
+    const post = loaderData?.post as Post | null | undefined
+    const url = postUrl(params.postId)
+
+    if (!post) {
+      return { meta: [{ title: 'Post not found · Closfa' }, { name: 'robots', content: 'noindex' }] }
+    }
+
+    const title = buildShareTitle(post)
+    const description = buildShareDescription(post)
+    const image = ogImageUrl(post)
+
+    return {
+      meta: [
+        { title: `${title} · Closfa` },
+        { name: 'description', content: description },
+        { property: 'og:type', content: 'article' },
+        { property: 'og:title', content: title },
+        { property: 'og:description', content: description },
+        { property: 'og:url', content: url },
+        ...(image
+          ? [
+              { property: 'og:image', content: image },
+              { property: 'og:image:width', content: '1200' },
+              { property: 'og:image:height', content: '630' },
+              { property: 'og:image:alt', content: description },
+            ]
+          : []),
+        { name: 'twitter:card', content: image ? 'summary_large_image' : 'summary' },
+        { name: 'twitter:title', content: title },
+        { name: 'twitter:description', content: description },
+        ...(image ? [{ name: 'twitter:image', content: image }] : []),
+      ],
+      // Two URLs address the same post (/post/:id and /?post=:id); this tells
+      // crawlers which one is authoritative.
+      links: [{ rel: 'canonical', href: url }],
+    }
   },
   component: PostDetailPage,
 })
@@ -80,7 +130,7 @@ function PostDetailPage() {
 
               <div className="flex flex-col gap-4">
                 {post.commentsList && post.commentsList.length > 0 ? (
-                  post.commentsList.map((comment: any) => (
+                  (post.commentsList as unknown as CommentData[]).map((comment) => (
                     <CommentItem
                       key={comment.comment_id}
                       comment={comment}

@@ -49,13 +49,18 @@ export function EditProfileModal({ isOpen, onClose, onSaved, initial, initials }
       let imageMediaId: string | undefined
 
       if (avatarFile) {
-        const auth = await getImageKitAuth({
+        const authRes = await getImageKitAuth({
           data: {
             mimeType: avatarFile.type,
             fileSizeBytes: avatarFile.size,
             fileName: avatarFile.name,
           },
         })
+        // Rejections here are user-fixable ("that file is too large"), so the
+        // server's own message is surfaced rather than a generic failure.
+        if (!authRes.ok) throw new Error(authRes.message)
+        const auth = authRes.data
+
         const response = await upload({
           file: avatarFile,
           fileName: avatarFile.name,

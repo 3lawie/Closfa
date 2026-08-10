@@ -1,39 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
+/**
+ * The `dark` class on <html> is the single source of truth for the theme, and
+ * the blocking inline script in __root.tsx has already applied it (from
+ * localStorage, falling back to prefers-color-scheme) before React hydrates.
+ *
+ * So this component reads that class rather than recomputing the same decision
+ * in an effect and calling setState — which is what it used to do, producing an
+ * extra render on mount and a second, silently divergent copy of the
+ * theme-resolution logic.
+ */
+const listeners = new Set<() => void>()
+
+function subscribe(onChange: () => void): () => void {
+  listeners.add(onChange)
+  return () => { listeners.delete(onChange) }
+}
+
+function isDarkNow(): boolean {
+  return document.documentElement.classList.contains('dark')
+}
+
+function setTheme(dark: boolean): void {
+  document.documentElement.classList.toggle('dark', dark)
+  localStorage.setItem('theme', dark ? 'dark' : 'light')
+  for (const l of listeners) l()
+}
+
 export function ThemeToggle({ iconOnly = false }: { iconOnly?: boolean }) {
-  const [isDark, setIsDark] = useState(false)
-
-  useEffect(() => {
-    // Check initial state
-    const isDarkStore = localStorage.getItem('theme') === 'dark'
-    const isDarkOs = window.matchMedia('(prefers-color-scheme: dark)').matches
-    const isDarkMode = isDarkStore || (!localStorage.getItem('theme') && isDarkOs)
-
-    setIsDark(isDarkMode)
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [])
-
-  const toggleTheme = () => {
-    const newDark = !isDark
-    setIsDark(newDark)
-    if (newDark) {
-      document.documentElement.classList.add('dark')
-      localStorage.setItem('theme', 'dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-      localStorage.setItem('theme', 'light')
-    }
-  }
+  // Server snapshot is false; the inline script means the real class is already
+  // correct in the DOM, so no flash — only the icon settles on hydration.
+  const isDark = useSyncExternalStore(subscribe, isDarkNow, () => false)
 
   return (
     <button
-      onClick={toggleTheme}
+      onClick={() => setTheme(!isDark)}
+      aria-pressed={isDark}
       className={cn(
         "flex items-center justify-center transition-all duration-[var(--motion-fast)] ease-[var(--motion-ease)] hover:bg-surface text-text-s",
         iconOnly
